@@ -3,6 +3,7 @@ package process
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/chris576/vigil/internal/nginx"
 	"github.com/chris576/vigil/internal/systemd"
@@ -258,6 +259,73 @@ func (m *Manager) Status(ctx context.Context, name string) (activeState, subStat
 		return "inactive", "disabled", nil
 	default:
 		return "", "", fmt.Errorf("unknown process type: %s", p.Type)
+	}
+}
+
+// Logs returns a reader streaming logs for the named process.
+// Delegates to systemd journalctl for Node apps, nginx log for Static apps.
+func (m *Manager) Logs(ctx context.Context, name string, lines int, follow bool) (io.ReadCloser, error) {
+	p, err := m.store.Load(name)
+	if err != nil {
+		return nil, fmt.Errorf("loading process: %w", err)
+	}
+	switch p.Type {
+	case TypeNode:
+		if m.systemd == nil {
+			return nil, fmt.Errorf("systemd client not available")
+		}
+		return m.systemd.Logs(ctx, name, lines, follow)
+	case TypeStatic:
+		if m.nginx == nil {
+			return nil, fmt.Errorf("nginx client not available")
+		}
+		return m.nginx.Logs(ctx, name, lines, follow)
+	default:
+		return nil, fmt.Errorf("unknown process type: %s", p.Type)
+	}
+}
+
+// SetupLogging enables persistent log saving for the named process.
+func (m *Manager) SetupLogging(ctx context.Context, name string, logPath string, maxSize string, rotate int) error {
+	p, err := m.store.Load(name)
+	if err != nil {
+		return fmt.Errorf("loading process: %w", err)
+	}
+	switch p.Type {
+	case TypeNode:
+		if m.systemd == nil {
+			return fmt.Errorf("systemd client not available")
+		}
+		return m.systemd.SetupLogging(ctx, name, logPath, maxSize, rotate)
+	case TypeStatic:
+		if m.nginx == nil {
+			return fmt.Errorf("nginx client not available")
+		}
+		return m.nginx.SetupLogging(name, logPath, maxSize, rotate)
+	default:
+		return fmt.Errorf("unknown process type: %s", p.Type)
+	}
+}
+
+// RemoveLogging disables persistent log saving for the named process.
+func (m *Manager) RemoveLogging(ctx context.Context, name string) error {
+	p, err := m.store.Load(name)
+	if err != nil {
+		return fmt.Errorf("loading process: %w", err)
+	}
+	switch p.Type {
+	case TypeNode:
+		if m.systemd == nil {
+			return fmt.Errorf("systemd client not available")
+		}
+		return m.systemd.RemoveLogging(ctx, name)
+	case TypeStatic:
+		if m.nginx == nil {
+			return fmt.Errorf("nginx client not available")
+		}
+		return m.nginx.RemoveLogging(name)
+	default:
+		return fmt.Errorf("unknown process type: %s", p.Type)
 	}
 }
 
