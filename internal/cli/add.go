@@ -16,6 +16,10 @@ func newAddCmd() *cobra.Command {
 	var force bool
 	var entry string
 	var buildDir string
+	var workingDir string
+	var envFile string
+	var nginxDomain string
+	var nginxPath string
 
 	cmd := &cobra.Command{
 		Use:   "add [name]",
@@ -54,7 +58,7 @@ Examples:
 				return fmt.Errorf("required flag(s) \"port\" not set")
 			}
 
-			return addSingle(cmd, pm, nameArg, appType, entry, buildDir, port, force)
+			return addSingle(cmd, pm, nameArg, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, port, force)
 		},
 	}
 
@@ -63,21 +67,29 @@ Examples:
 	flags.IntVar(&port, "port", 0, "Port the app listens on")
 	flags.StringVar(&entry, "entry", "", "Entry script (required for node apps)")
 	flags.StringVar(&buildDir, "build-dir", "", "Build directory (required for static apps)")
+	flags.StringVar(&workingDir, "working-dir", "", "Working directory for the app")
+	flags.StringVar(&envFile, "env-file", "", "Path to environment file")
+	flags.StringVar(&nginxDomain, "nginx-domain", "", "Nginx server_name (for static apps)")
+	flags.StringVar(&nginxPath, "nginx-path", "", "Nginx root path (for static apps)")
 	flags.StringVar(&configFile, "config", "", "Path to ecosystem JSON file")
 	flags.BoolVar(&force, "force", false, "Overwrite existing app")
 
 	return cmd
 }
 
-func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, buildDir string, port int, force bool) error {
+func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath string, port int, force bool) error {
 	p := process.Process{
-		Name:      name,
-		Type:      process.Type(appType),
-		Port:      port,
-		Entry:     entry,
-		BuildDir:  buildDir,
-		CreatedAt: time.Now(),
-		Enabled:   true,
+		Name:        name,
+		Type:        process.Type(appType),
+		Port:        port,
+		Entry:       entry,
+		BuildDir:    buildDir,
+		WorkingDir:  workingDir,
+		EnvFile:     envFile,
+		NginxDomain: nginxDomain,
+		NginxPath:   nginxPath,
+		CreatedAt:   time.Now(),
+		Enabled:     true,
 	}
 
 	if err := p.Validate(); err != nil {

@@ -37,31 +37,43 @@ func (m *Manager) AddProcess(ctx context.Context, p Process, force bool) error {
 		return fmt.Errorf("saving process: %w", err)
 	}
 
+	var svcErr error
+
 	switch p.Type {
 	case TypeNode:
 		if m.systemd == nil {
-			return fmt.Errorf("systemd client not available")
+			svcErr = fmt.Errorf("systemd client not available")
+			break
 		}
 		content := unitContent(p)
 		if err := m.systemd.CreateUnitFile(p.Name, content); err != nil {
-			return fmt.Errorf("creating systemd unit: %w", err)
+			svcErr = fmt.Errorf("creating systemd unit: %w", err)
+			break
 		}
 		if err := m.systemd.EnableUnit(ctx, p.Name); err != nil {
-			return fmt.Errorf("enabling systemd unit: %w", err)
+			svcErr = fmt.Errorf("enabling systemd unit: %w", err)
+			break
 		}
 		if err := m.systemd.Reload(ctx); err != nil {
-			return fmt.Errorf("reloading systemd: %w", err)
+			svcErr = fmt.Errorf("reloading systemd: %w", err)
 		}
 	case TypeStatic:
 		if m.nginx == nil {
-			return fmt.Errorf("nginx client not available")
+			svcErr = fmt.Errorf("nginx client not available")
+			break
 		}
 		if err := m.nginx.EnableSite(p.Name, p.Port, p.NginxDomain, p.NginxPath); err != nil {
-			return fmt.Errorf("enabling nginx site: %w", err)
+			svcErr = fmt.Errorf("enabling nginx site: %w", err)
+			break
 		}
 		if err := m.nginx.Reload(ctx); err != nil {
-			return fmt.Errorf("reloading nginx: %w", err)
+			svcErr = fmt.Errorf("reloading nginx: %w", err)
 		}
+	}
+
+	if svcErr != nil {
+		m.store.Delete(p.Name)
+		return svcErr
 	}
 
 	return nil
@@ -73,35 +85,35 @@ func (m *Manager) RemoveProcess(ctx context.Context, name string) error {
 		return fmt.Errorf("loading process: %w", err)
 	}
 
+	var firstErr error
+
 	switch p.Type {
 	case TypeNode:
-		if m.systemd == nil {
-			return fmt.Errorf("systemd client not available")
-		}
-		if err := m.systemd.StopUnit(ctx, name); err != nil {
-			return fmt.Errorf("stopping unit: %w", err)
-		}
-		if err := m.systemd.DisableUnit(ctx, name); err != nil {
-			return fmt.Errorf("disabling unit: %w", err)
-		}
-		if err := m.systemd.RemoveUnitFile(name); err != nil {
-			return fmt.Errorf("removing unit file: %w", err)
-		}
-		if err := m.systemd.Reload(ctx); err != nil {
-			return fmt.Errorf("reloading systemd: %w", err)
+		if m.systemd != nil {
+			if err := m.systemd.StopUnit(ctx, name); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("stopping unit: %w", err)
+			}
+			if err := m.systemd.DisableUnit(ctx, name); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("disabling unit: %w", err)
+			}
+			if err := m.systemd.RemoveUnitFile(name); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("removing unit file: %w", err)
+			}
+			if err := m.systemd.Reload(ctx); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("reloading systemd: %w", err)
+			}
 		}
 	case TypeStatic:
-		if m.nginx == nil {
-			return fmt.Errorf("nginx client not available")
-		}
-		if err := m.nginx.DisableSite(name); err != nil {
-			return fmt.Errorf("disabling nginx site: %w", err)
-		}
-		if err := m.nginx.RemoveSiteConfig(name); err != nil {
-			return fmt.Errorf("removing nginx config: %w", err)
-		}
-		if err := m.nginx.Reload(ctx); err != nil {
-			return fmt.Errorf("reloading nginx: %w", err)
+		if m.nginx != nil {
+			if err := m.nginx.DisableSite(name); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("disabling nginx site: %w", err)
+			}
+			if err := m.nginx.RemoveSiteConfig(name); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("removing nginx config: %w", err)
+			}
+			if err := m.nginx.Reload(ctx); err != nil && firstErr == nil {
+				firstErr = fmt.Errorf("reloading nginx: %w", err)
+			}
 		}
 	}
 
@@ -109,7 +121,7 @@ func (m *Manager) RemoveProcess(ctx context.Context, name string) error {
 		return fmt.Errorf("deleting process config: %w", err)
 	}
 
-	return nil
+	return firstErr
 }
 
 func (m *Manager) ListProcesses(ctx context.Context) ([]Process, error) {

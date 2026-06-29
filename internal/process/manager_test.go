@@ -474,16 +474,18 @@ func TestManager_RemoveProcess_NilSystemd(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{"x": {Name: "x", Type: TypeNode}}}
 	m := New(store, nil, &mockNginx{})
 	err := m.RemoveProcess(context.Background(), "x")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "systemd client not available")
+	require.NoError(t, err)
+	_, exists := store.processes["x"]
+	assert.False(t, exists)
 }
 
 func TestManager_RemoveProcess_NilNginx(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{"x": {Name: "x", Type: TypeStatic}}}
 	m := New(store, &mockSystemd{}, nil)
 	err := m.RemoveProcess(context.Background(), "x")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "nginx client not available")
+	require.NoError(t, err)
+	_, exists := store.processes["x"]
+	assert.False(t, exists)
 }
 
 func TestManager_RestartProcess_NilSystemd(t *testing.T) {
@@ -558,7 +560,9 @@ func TestManager_RemoveProcess_NodeNilSystemd(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{"x": {Name: "x", Type: TypeNode}}}
 	m := New(store, nil, &mockNginx{})
 	err := m.RemoveProcess(context.Background(), "x")
-	require.Error(t, err)
+	require.NoError(t, err)
+	_, exists := store.processes["x"]
+	assert.False(t, exists)
 }
 
 func TestManager_RemoveProcess_NilStoreDeleteError(t *testing.T) {
