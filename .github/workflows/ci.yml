@@ -19,11 +19,6 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-
       - name: Test
         run: go test -race -count=1 ./...
 

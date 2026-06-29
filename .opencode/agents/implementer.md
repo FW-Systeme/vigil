@@ -33,10 +33,17 @@ func (s *serviceImpl) DoSomething(input Something) (Something, error) {
 
 5. Tests schreibt der Tester – du schreibst keine Tests
 
+### Phase: Lint
+
+Nach der Implementierung:
+
+1. `golangci-lint run --fix ./...` ausführen
+2. Lauf `golangci-lint run ./...` — Exit-Code muss 0 sein
+3. Bei Fehlern: manuell korrigieren, wiederholen bis sauber
+
 ## Constraints
 
 - Keine Logik in Tests schreiben (macht Tester)
-- `golangci-lint run ./...` muss ohne Fehler/Warnings passieren
 - Existierende Projekt-Konventionen befolgen
 - Compile-Time Interface-Check (`var _ Contract = (*Impl)(nil)`) einbauen
 - Bestehende Patterns im Projekt beachten
