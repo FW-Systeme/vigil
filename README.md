@@ -2,7 +2,7 @@
 
 Vigil ist ein leichtgewichtiger CLI-Prozessmanager – eine PM2-Alternative für Linux, die auf systemd und nginx aufsetzt.
 
-Verwaltet Node.js- und Static-Apps durch Erzeugung von systemd-Units bzw. nginx-Site-Konfigurationen.
+Verwaltet Backend-Apps (Node.js, Go, Python, …) und Static-Apps durch Erzeugung von systemd-Units bzw. nginx-Site-Konfigurationen.
 
 ## Installation
 
@@ -25,15 +25,32 @@ sudo mv vigil /usr/local/bin/
 
 ## Kurzstart
 
-### Node-App registrieren
+### Backend-App registrieren
+
+Typ `app` (oder `node`) für beliebige Backend-Sprachen:
 
 ```bash
+# Node.js
 sudo vigil add my-api \
-  --type node \
+  --type app \
   --entry /opt/myapp/server.js \
   --port 3000 \
-  --working-dir /opt/myapp \
-  --env-file /opt/myapp/.env
+  --working-dir /opt/myapp
+
+# Go-Binary (mit Build vor Start)
+sudo vigil add my-service \
+  --type app \
+  --command "/opt/myapp/bin --port 8080" \
+  --build-cmd "go build -o /opt/myapp/bin ." \
+  --port 8080 \
+  --working-dir /opt/myapp
+
+# Python
+sudo vigil add my-bot \
+  --type app \
+  --command "python /opt/bot/main.py" \
+  --port 9000 \
+  --working-dir /opt/bot
 ```
 
 ### Static-App registrieren
@@ -85,6 +102,8 @@ Registriert eine neue App.
 | `--build-dir` | `string` | bei `static` | Build-Verzeichnis (z.B. `dist/`) |
 | `--working-dir` | `string` | nein | Arbeitsverzeichnis |
 | `--env-file` | `string` | nein | Pfad zur Environment-Datei |
+| `--command` | `string` | nein | Custom `ExecStart` (z.B. `"/opt/app/bin --port 3000"`). Überschreibt `--entry` |
+| `--build-cmd` | `string` | nein | Build-Befehl, läuft in `--working-dir` vor jedem Start (z.B. `"go build -o /opt/app/bin ."`) |
 | `--nginx-domain` | `string` | nein | nginx `server_name` |
 | `--nginx-path` | `string` | nein | nginx `root`-Pfad |
 | `--nginx-config` | `string` | nein | Pfad zu benutzerdefinierter nginx-Config (überschreibt Auto-Generierung) |
@@ -115,6 +134,13 @@ vigil add my-api --config ecosystem.json
 
 # Vorhandene App überschreiben
 vigil add my-api --type node --entry app.js --port 3000 --force
+
+# Go-Binary mit Build und Smoke-Test
+vigil add my-service --type app \
+  --command "/opt/myapp/bin --port 8080" \
+  --build-cmd "go build -o /opt/myapp/bin ." \
+  --port 8080 --working-dir /opt/myapp \
+  --smoke-test-script /opt/myapp/smoke.sh
 
 # Mit Smoke-Test-Skript (aktiviert Release-Management)
 vigil add my-api --type node --entry server.js --port 3000 \
@@ -238,14 +264,16 @@ vigil init
 vigil init --output mein-projekt.json
 ```
 
-**Erzeugt:**
+**Erzeugt (`type: app`):**
 ```json
 {
   "name": "my-app",
-  "type": "node",
+  "type": "app",
   "port": 3000,
   "entry": "./app.js",
   "build_dir": "",
+  "command": "",
+  "build_cmd": "",
   "env_file": "",
   "working_dir": "",
   "nginx_domain": "",
@@ -337,6 +365,8 @@ Die `ecosystem.json` erlaubt es, mehrere Apps auf einmal zu registrieren. Das Fo
 | `nginx_domain` | `string` | nein | nginx `server_name` |
 | `nginx_path` | `string` | nein | nginx `root`-Pfad |
 | `nginx_config` | `string` | nein | Pfad zu benutzerdefinierter nginx-Config (überschreibt Auto-Generierung) |
+| `command` | `string` | nein | Custom `ExecStart` (z.B. `"/opt/app/bin --port 8080"`) |
+| `build_cmd` | `string` | nein | Build-Befehl vor Start (z.B. `"go build -o /opt/app/bin ."`) |
 | `smoke_test_script` | `string` | ja, wenn Release-Management | Pfad zum Smoke-Test-Skript |
 | `bundled_deps` | `bool` | nein | Abhängigkeiten im Paket enthalten (default: `false`, dann `npm ci --production`) |
 | `enabled` | `bool` | nein | Ob die App aktiv ist (default: `false`) |
@@ -381,7 +411,7 @@ cmd/vigil/main.go
 
 ## Funktionsweise
 
-### Node-Apps (type: "node")
+### Backend-Apps (type: "app" oder "node")
 
 Vigil erzeugt eine systemd-Unit-Datei unter `/etc/systemd/system/<name>.service`:
 
@@ -392,17 +422,19 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/myapp
-ExecStart=/usr/bin/node /opt/myapp/server.js
+ExecStart=/opt/app/bin --port 3000
 Restart=on-failure
 RestartSec=5
-EnvironmentFile=/opt/myapp/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 Die Unit wird via DBus aktiviert und gestartet. systemd übernimmt das Restart-Verhalten, Logging (`journalctl`) und Prozess-Isolation.
+
+**`--command`**: Wird gesetzt, nutzt Vigil diesen Wert als `ExecStart`. Sonst automatisch `/usr/bin/node <entry>` (rückwärtskompatibel zu `--type node`).
+
+**`--build-cmd`**: Wird vor jedem Start/Neustart synchron in `WorkingDir` ausgeführt. Schlägt der Build fehl, startet der Service nicht. Nützlich für Kompilierung (Go, Rust, …) oder Dependency-Installation.
 
 ### Static-Apps (type: "static")
 
