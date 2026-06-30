@@ -212,6 +212,26 @@ func TestClient_EnableSiteFromFile_NonExistentSource(t *testing.T) {
 	assert.Contains(t, err.Error(), "reading config")
 }
 
+func TestClient_EnableSiteFromFile_WriteError(t *testing.T) {
+	// Create a valid config file
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "custom.conf")
+	os.WriteFile(configPath, []byte("config"), 0644)
+
+	// Use a read-only available dir → WriteFile fails
+	roDir := t.TempDir()
+	os.Chmod(roDir, 0555)
+
+	c := &client{}
+	origAvailable := availablePath
+	availablePath = func(name string) string { return filepath.Join(roDir, name+".conf") }
+	defer func() { availablePath = origAvailable }()
+
+	err := c.EnableSiteFromFile("myapp", configPath)
+	require.Error(t, err)
+	os.Chmod(roDir, 0755)
+}
+
 func TestClient_DisableSite(t *testing.T) {
 	t.Run("non-existent returns nil", func(t *testing.T) {
 		c := &client{}
@@ -406,6 +426,16 @@ func TestLogs_TailPath_NonExistentFile(t *testing.T) {
 	data, err := io.ReadAll(r)
 	require.NoError(t, err)
 	assert.Empty(t, data)
+}
+
+func TestLogs_FollowStartError(t *testing.T) {
+	orig := tailCmd
+	tailCmd = "/nonexistent-tail-binary-xyz"
+	defer func() { tailCmd = orig }()
+
+	c := &client{}
+	_, err := c.Logs(context.Background(), "test", 10, true)
+	require.Error(t, err)
 }
 
 func TestLogs_FollowPath_NonExistentFile(t *testing.T) {

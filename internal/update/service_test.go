@@ -598,6 +598,48 @@ func TestLinkShared_SharedNotExist(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestLinkShared_SymlinkError(t *testing.T) {
+	sharedDir := t.TempDir()
+	os.WriteFile(filepath.Join(sharedDir, "file.txt"), []byte("data"), 0644)
+
+	// releaseDir is a file, not a dir → symlink creation fails
+	releaseDir := t.TempDir()
+	releaseFile := filepath.Join(releaseDir, "not-a-dir")
+	os.WriteFile(releaseFile, []byte("x"), 0644)
+
+	err := linkShared(sharedDir, releaseFile)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "symlinking")
+}
+
+func TestUpdate_ErrExtract(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, []byte("valid tar.gz data"), 0644)
+	// Remove package so extractTarGz fails but verifyIntegrity passes (no .sha256)
+	os.Remove(pkgPath)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "app",
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	})
+
+	err := svc.Update(context.Background(), "app", "v1.0.0")
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrNoPackage)
+	assert.NotErrorIs(t, err, ErrIntegrity)
+}
+
 func TestCleanupReleases(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(dir, 0755)
@@ -626,6 +668,21 @@ func TestCleanupReleases_NoneToDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.DirExists(t, filepath.Join(dir, "v1.0.0"))
 	assert.DirExists(t, filepath.Join(dir, "v1.1.0"))
+}
+
+func TestCleanupReleases_NonDirEntry(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(dir, 0755)
+	os.MkdirAll(filepath.Join(dir, "v2.0.0"), 0755)
+	os.MkdirAll(filepath.Join(dir, "v2.0.1"), 0755)
+	// Add a non-directory entry alongside release dirs
+	os.WriteFile(filepath.Join(dir, "README.txt"), []byte("info"), 0644)
+
+	err := cleanupReleases(dir, "v2.0.1", 3)
+	require.NoError(t, err)
+	assert.DirExists(t, filepath.Join(dir, "v2.0.0"))
+	assert.DirExists(t, filepath.Join(dir, "v2.0.1"))
+	assert.FileExists(t, filepath.Join(dir, "README.txt"), "non-dir entries should be preserved")
 }
 
 func TestCleanupReleases_NonExistentDir(t *testing.T) {
