@@ -492,6 +492,27 @@ Ein Update-Paket ist eine `.tar.gz`-Datei, die den gesamten App-Code (inkl. `pac
 
 Der Dateiname (ohne `.tar.gz`) wird als Version verwendet. Liegt eine `.sha256`-Datei neben dem Paket, prüft Vigil die Integrität vor dem Entpacken.
 
+**Archiv-Struktur — kein Wrapping-Ordner!**
+
+Vigil entpackt das Archiv direkt ins Release-Verzeichnis. Enthält das Archiv einen Wrapping-Ordner (z.B. `my-app-v1.0.0/`), landen die Dateien eine Ebene zu tief.
+
+**✅ Richtig (flach):**
+```
+server.js
+package.json
+lib/
+  utils.js
+```
+
+**❌ Falsch (mit Wrapping-Ordner):**
+```
+my-app-v1.0.0/
+  server.js           ← landet in releases/v1.0.0/my-app-v1.0.0/server.js
+  package.json            statt in releases/v1.0.0/server.js
+```
+
+**`--bundled-deps`:** Enthält das Archiv `node_modules/`, setzt Vigil `npm ci` aus. Andernfalls installiert Vigil automatisch `npm ci --production`.
+
 ### Lock-Mechanismus
 
 Eine Lock-Datei `<working-dir>/.vigil.lock` verhindert parallele Updates – sowohl über SSH als auch über die Web-App. Bei einem laufenden Update schlägt ein zweiter Aufruf sofort mit `update lock held` fehl.
