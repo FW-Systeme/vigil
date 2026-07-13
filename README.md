@@ -234,6 +234,7 @@ vigil update my-api
 | Flag | Typ | Beschreibung |
 |------|-----|-------------|
 | `--version` | `string` | Zielversion (z.B. `v1.2.0`). Wird leer gelassen, scannt Vigil `incoming/` nach `.tar.gz`-Dateien |
+| `--quiet` | `bool` | Fortschrittsausgabe unterdrücken (nur Fehler und finales Ergebnis anzeigen) |
 
 **Ablauf:**
 
@@ -514,21 +515,35 @@ curl -sf http://localhost:3000/health > /dev/null
 
 ### Update-Paket-Format
 
-Ein Update-Paket ist eine `.tar.gz`-Datei, die den gesamten App-Code (inkl. `package.json`, Frontend-Build etc.) enthält:
+Ein Update-Paket ist eine `.tar.gz`-Datei, die den gesamten App-Code enthält.
 
-```
-<working-dir>/incoming/
-├── v1.2.0.tar.gz          ← App-Code als Archiv
-└── v1.2.0.tar.gz.sha256   ← Optional: SHA256-Prüfsumme
-```
+#### Anforderungen an das Incoming-Paket
 
-Der Dateiname (ohne `.tar.gz`) wird als Version verwendet. Liegt eine `.sha256`-Datei neben dem Paket, prüft Vigil die Integrität vor dem Entpacken.
+| Kriterium | Anforderung |
+|-----------|-------------|
+| **Dateiname** | `<version>.tar.gz` – z.B. `v1.2.0.tar.gz`. Der Teil vor `.tar.gz` wird als Versionsname für das Release-Verzeichnis verwendet |
+| **SHA256-Prüfsumme (optional)** | Datei `<version>.tar.gz.sha256` mit hex-kodiertem SHA256-Hash. Fehlt die Datei, wird die Integritätsprüfung übersprungen. Bei einem Mismatch bricht Vigil mit `integrity check failed` ab |
+| **Archiv-Format** | Gültiges gzip-komprimiertes tar-Archiv (.tar.gz) |
+| **Archiv-Inhalt** | Applikationscode **flach** – kein Wrapping-Ordner (siehe unten) |
+| **Pfad-Traversal** | Einträge mit `../` im Pfad werden von Vigil stillschweigend ignoriert (Sicherheit) |
 
-**Archiv-Struktur — kein Wrapping-Ordner!**
+#### Inhaltliche Voraussetzungen
 
-Vigil entpackt das Archiv direkt ins Release-Verzeichnis. Enthält das Archiv einen Wrapping-Ordner (z.B. `my-app-v1.0.0/`), landen die Dateien eine Ebene zu tief.
+Das Paket muss enthalten, was die Applikation zum Laufen braucht – Vigil validiert den Inhalt **nicht** vor dem Entpacken.
 
-**✅ Richtig (flach):**
+| Szenario | Erforderlich im Archiv |
+|----------|----------------------|
+| `--bundled-deps=false` (Standard) | `package.json` + `package-lock.json` (für `npm ci --production`) |
+| `--bundled-deps=true` | `node_modules/` + `package.json`, `npm ci` wird übersprungen |
+| Jede App | Einstiegsskript (z.B. `server.js`), Configs, statische Dateien etc. |
+
+> **Fehlt `package.json` bei `--bundled-deps=false`, schlägt `npm ci` fehl und Vigil bricht mit `dependency installation failed` ab.**
+
+#### Archiv-Struktur — kein Wrapping-Ordner!
+
+Vigil entpackt das Archiv **direkt** ins Release-Verzeichnis `releases/<version>/`. Enthält das Archiv einen Wrapping-Ordner (z.B. `my-app-v1.0.0/`), landen alle Dateien eine Ebene zu tief:
+
+**✅ Richtig (flach) – Dateien auf oberster Ebene im Archiv:**
 ```
 server.js
 package.json
@@ -543,7 +558,51 @@ my-app-v1.0.0/
   package.json            statt in releases/v1.0.0/server.js
 ```
 
-**`--bundled-deps`:** Enthält das Archiv `node_modules/`, setzt Vigil `npm ci` aus. Andernfalls installiert Vigil automatisch `npm ci --production`.
+#### Paket erstellen — Beispiel
+
+```bash
+# App-Code flach packen (von Build-Verzeichnis aus)
+tar -czf v1.2.0.tar.gz -C ./build .
+
+# Optional: SHA256-Prüfsumme erzeugen
+sha256sum v1.2.0.tar.gz > v1.2.0.tar.gz.sha256
+
+# Paket ins incoming/ legen
+mv v1.2.0.tar.gz v1.2.0.tar.gz.sha256 <working-dir>/incoming/
+```
+
+#### Häufige Fehler beim Update
+
+| Fehler | Ursache | Lösung |
+|--------|---------|--------|
+| `no package found in incoming dir` | Keine `.tar.gz`-Datei in `incoming/` | Paket (z.B. `v1.0.0.tar.gz`) nach `incoming/` legen |
+| `integrity check failed` | SHA256-Hash stimmt nicht | `sha256sum` neu berechnen, `.sha256`-Datei aktualisieren |
+| `reading gzip: ...` | Archiv ist kein gültiges gzip-Format | `file v1.0.0.tar.gz` prüfen, Archiv korrekt erstellen |
+| Wrapping-Ordner (unauffällig) | App startet nicht, Pfade stimmen nicht | `tar -tzf v1.0.0.tar.gz` prüfen: keine führende Ordnerebene |
+| `npm ci` schlägt fehl | `package-lock.json` fehlt im Archiv | Mit `npm install` im Build-Verzeichnis `package-lock.json` generieren**
+
+**`--bundled-deps`:** Enthält das Archiv bereits `node_modules/`, kann Vigil mit `--bundled-deps=true` den Schritt `npm ci` überspringen. Sonst installiert Vigil automatisch `npm ci --production`.
+
+#### Konsolenausgabe während des Updates
+
+Vigil gibt den Fortschritt des 12-Schritte-Prozesses auf der Konsole aus:
+
+```
+  Lock acquired
+  Using version v1.2.0
+  Integrity check passed
+  Extracting v1.2.0.tar.gz...
+  Installing dependencies (npm ci)...
+  Linking shared data...
+  Switching symlink to v1.2.0...
+  Restarting service...
+  Running smoke test...
+  Smoke test passed
+  Cleaned up old releases
+Updated "myapp" to v1.2.0
+```
+
+Bei einem Fehler bricht Vigil mit einer Fehlermeldung ab und führt ggf. ein Rollback durch. Mit `--quiet` kann die Fortschrittsausgabe unterdrückt werden.
 
 ### Lock-Mechanismus
 

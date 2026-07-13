@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,7 +58,7 @@ func TestUpdate_NoWorkingDir(t *testing.T) {
 	svc := NewService(&mockStore{p: process.Process{
 		Name:            "app",
 		SmokeTestScript: "/nonexistent",
-	}}, nil)
+	}}, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "working_dir")
@@ -73,7 +74,7 @@ func TestUpdate_ErrLocked(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil)
+	svc := NewService(store, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrLocked)
 }
@@ -85,7 +86,7 @@ func TestUpdate_ErrNoPackage(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil)
+	svc := NewService(store, nil, nil)
 	err := svc.Update(context.Background(), "app", "")
 	assert.ErrorIs(t, err, ErrNoPackage)
 }
@@ -107,7 +108,7 @@ func TestUpdate_ErrIntegrity(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil)
+	svc := NewService(store, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrIntegrity)
 }
@@ -139,7 +140,7 @@ exit 0
 	}}, func(ctx context.Context, name string) error {
 		restarted = true
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -156,6 +157,74 @@ exit 0
 	envSymlink, err := os.Readlink(filepath.Join(releaseDir, ".env"))
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(sharedDir, ".env"), envSymlink)
+}
+
+func TestUpdate_OutputWritten(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+	tarData := createTarGz(t, map[string]string{
+		"server.js":     `console.log("ok");`,
+		"package.json":  `{"name":"app"}`,
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	var buf bytes.Buffer
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "app",
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, &buf)
+
+	err := svc.Update(context.Background(), "app", "v1.0.0")
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Lock acquired")
+	assert.Contains(t, output, "Using version v1.0.0")
+	assert.Contains(t, output, "Integrity check passed")
+	assert.Contains(t, output, "Extracting v1.0.0.tar.gz")
+	assert.Contains(t, output, "Linking shared data")
+	assert.Contains(t, output, "Switching symlink to v1.0.0")
+	assert.Contains(t, output, "Restarting service")
+	assert.Contains(t, output, "Smoke test passed")
+	assert.Contains(t, output, "Cleaned up old releases")
+}
+
+func TestUpdate_DiscardOutput(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+	tarData := createTarGz(t, map[string]string{"data": "x"})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "app",
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, io.Discard)
+
+	err := svc.Update(context.Background(), "app", "v1.0.0")
+	require.NoError(t, err)
+
+	releaseDir := filepath.Join(dir, "releases", "v1.0.0")
+	assert.DirExists(t, releaseDir)
 }
 
 func TestUpdate_AutoDetectVersion(t *testing.T) {
@@ -177,7 +246,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "")
 	require.NoError(t, err)
@@ -215,7 +284,7 @@ exit 1
 	}}, func(ctx context.Context, name string) error {
 		restartCount++
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrRolledBack)
@@ -247,7 +316,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -283,7 +352,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "v2.0.0")
 	require.NoError(t, err)
@@ -319,7 +388,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -362,7 +431,7 @@ exit 0
 			return fmt.Errorf("restart failed")
 		}
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
@@ -632,7 +701,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	})
+	}, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)

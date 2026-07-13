@@ -20,10 +20,14 @@ import (
 type service struct {
 	store   process.Store
 	restart RestartFunc
+	out     io.Writer
 }
 
-func NewService(store process.Store, restart RestartFunc) Service {
-	return &service{store: store, restart: restart}
+func NewService(store process.Store, restart RestartFunc, out io.Writer) Service {
+	if out == nil {
+		out = io.Discard
+	}
+	return &service{store: store, restart: restart, out: out}
 }
 
 func (s *service) Update(ctx context.Context, name string, version string) error {
@@ -47,6 +51,7 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		return err
 	}
 	defer unlock()
+	fmt.Fprintln(s.out, "  Lock acquired")
 
 	for _, d := range []string{releasesDir, sharedDir, incomingDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -59,12 +64,16 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		if err != nil {
 			return err
 		}
+		fmt.Fprintf(s.out, "  Found package %s in incoming/\n", version)
+	} else {
+		fmt.Fprintf(s.out, "  Using version %s\n", version)
 	}
 
 	pkgPath := filepath.Join(incomingDir, version+".tar.gz")
 	if err := verifyIntegrity(pkgPath); err != nil {
 		return err
 	}
+	fmt.Fprintln(s.out, "  Integrity check passed")
 
 	releaseDir := filepath.Join(releasesDir, version)
 	if _, err := os.Stat(releaseDir); err == nil {
@@ -74,18 +83,23 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		return fmt.Errorf("creating release dir: %w", err)
 	}
 
+	fmt.Fprintf(s.out, "  Extracting %s...\n", version+".tar.gz")
 	if err := extractTarGz(pkgPath, releaseDir); err != nil {
 		os.RemoveAll(releaseDir)
 		return err
 	}
 
 	if !p.BundledDeps {
+		fmt.Fprintln(s.out, "  Installing dependencies (npm ci)...")
 		if err := installDeps(releaseDir); err != nil {
 			os.RemoveAll(releaseDir)
 			return err
 		}
+	} else {
+		fmt.Fprintln(s.out,  "  Skipping npm ci (bundled deps)")
 	}
 
+	fmt.Fprintln(s.out, "  Linking shared data...")
 	if err := linkShared(sharedDir, releaseDir); err != nil {
 		os.RemoveAll(releaseDir)
 		return fmt.Errorf("linking shared: %w", err)
@@ -96,11 +110,13 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		oldTarget = current
 	}
 
+	fmt.Fprintf(s.out, "  Switching symlink to %s...\n", version)
 	if err := switchSymlink(currentSymlink, releaseDir); err != nil {
 		os.RemoveAll(releaseDir)
 		return fmt.Errorf("switching symlink: %w", err)
 	}
 
+	fmt.Fprintln(s.out, "  Restarting service...")
 	if err := s.restart(ctx, name); err != nil {
 		rollbackSymlink(currentSymlink, oldTarget)
 		s.restart(ctx, name)
@@ -108,15 +124,19 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		return fmt.Errorf("restart after update: %w", err)
 	}
 
+	fmt.Fprintln(s.out, "  Running smoke test...")
 	if err := runScript(p.SmokeTestScript, releaseDir); err != nil {
+		fmt.Fprintln(s.out, "  Smoke test failed - rolling back...")
 		rollbackSymlink(currentSymlink, oldTarget)
 		s.restart(ctx, name)
 		return ErrRolledBack
 	}
+	fmt.Fprintln(s.out, "  Smoke test passed")
 
 	if err := cleanupReleases(releasesDir, version, 3); err != nil {
 		return fmt.Errorf("cleaning up releases: %w", err)
 	}
+	fmt.Fprintln(s.out, "  Cleaned up old releases")
 
 	return nil
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/chris576/vigil/internal/update"
 	"github.com/spf13/cobra"
@@ -9,6 +10,7 @@ import (
 
 func newUpdateCmd() *cobra.Command {
 	var version string
+	var quiet bool
 
 	cmd := &cobra.Command{
 		Use:   "update <name>",
@@ -34,22 +36,30 @@ The update process:
 				return fmt.Errorf("process manager not initialized")
 			}
 
-			svc := update.NewService(pm.Store(), pm.RestartProcess)
+			var out io.Writer = cmd.OutOrStdout()
+			if quiet {
+				out = io.Discard
+			}
+
+			svc := update.NewService(pm.Store(), pm.RestartProcess, out)
 
 			if err := svc.Update(cmd.Context(), args[0], version); err != nil {
 				return err
 			}
 
-			if version != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "Updated %q to %s\n", args[0], version)
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "Updated %q\n", args[0])
+			if !quiet {
+				if version != "" {
+					fmt.Fprintf(cmd.OutOrStdout(), "Updated %q to %s\n", args[0], version)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "Updated %q\n", args[0])
+				}
 			}
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&version, "version", "", "Target version (auto-detect from incoming/ if empty)")
+	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress progress output")
 
 	return cmd
 }
