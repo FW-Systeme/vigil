@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chris576/vigil/internal/cron"
 	"github.com/chris576/vigil/internal/nginx"
 	"github.com/chris576/vigil/internal/process"
 	"github.com/chris576/vigil/internal/systemd"
@@ -714,6 +715,693 @@ func TestLogSaveStatus_Disabled(t *testing.T) {
 	err = cmd.Execute()
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "disabled")
+}
+
+// --- Cron command tests ---
+
+type mockCronStore struct {
+	cron.Store
+	jobs map[string]cron.Job
+	err  error
+}
+
+func (m *mockCronStore) Get(name string) (cron.Job, error) {
+	if m.err != nil {
+		return cron.Job{}, m.err
+	}
+	j, ok := m.jobs[name]
+	if !ok {
+		return cron.Job{}, cron.ErrNotFound
+	}
+	return j, nil
+}
+
+func (m *mockCronStore) Save(job cron.Job) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.jobs[job.Name] = job
+	return nil
+}
+
+func (m *mockCronStore) Delete(name string) error {
+	if m.err != nil {
+		return m.err
+	}
+	delete(m.jobs, name)
+	return nil
+}
+
+func (m *mockCronStore) List() ([]cron.Job, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	var list []cron.Job
+	for _, j := range m.jobs {
+		list = append(list, j)
+	}
+	return list, nil
+}
+
+func newMockCronStore() *mockCronStore {
+	return &mockCronStore{jobs: make(map[string]cron.Job)}
+}
+
+type mockCronClient struct {
+	cron.Client
+	jobs         map[string]cron.Job
+	cronRunning  bool
+	installErr   error
+	removeErr    error
+	enableErr    error
+	disableErr   error
+}
+
+func newMockCronClient() *mockCronClient {
+	return &mockCronClient{jobs: make(map[string]cron.Job), cronRunning: true}
+}
+
+func (m *mockCronClient) Install(job cron.Job) error {
+	if m.installErr != nil {
+		return m.installErr
+	}
+	if _, exists := m.jobs[job.Name]; exists {
+		return cron.ErrAlreadyExists
+	}
+	m.jobs[job.Name] = job
+	return nil
+}
+
+func (m *mockCronClient) Remove(name string) error {
+	if m.removeErr != nil {
+		return m.removeErr
+	}
+	if _, exists := m.jobs[name]; !exists {
+		return cron.ErrNotFound
+	}
+	delete(m.jobs, name)
+	return nil
+}
+
+func (m *mockCronClient) Enable(name string) error {
+	if m.enableErr != nil {
+		return m.enableErr
+	}
+	job, exists := m.jobs[name]
+	if !exists {
+		return cron.ErrNotFound
+	}
+	job.Enabled = true
+	m.jobs[name] = job
+	return nil
+}
+
+func (m *mockCronClient) Disable(name string) error {
+	if m.disableErr != nil {
+		return m.disableErr
+	}
+	job, exists := m.jobs[name]
+	if !exists {
+		return cron.ErrNotFound
+	}
+	job.Enabled = false
+	m.jobs[name] = job
+	return nil
+}
+
+func (m *mockCronClient) List() ([]cron.Job, error) {
+	var list []cron.Job
+	for _, j := range m.jobs {
+		list = append(list, j)
+	}
+	return list, nil
+}
+
+func (m *mockCronClient) Get(name string) (cron.Job, error) {
+	job, exists := m.jobs[name]
+	if !exists {
+		return cron.Job{}, cron.ErrNotFound
+	}
+	return job, nil
+}
+
+func (m *mockCronClient) IsCronRunning() (bool, error) {
+	return m.cronRunning, nil
+}
+
+func TestCronAdd_NoArgs(t *testing.T) {
+	_, err := executeWithPM(t, testPM(), []string{"cron", "add"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "accepts 1 arg")
+}
+
+func TestCronAdd_MissingSchedule(t *testing.T) {
+	_, err := executeWithPM(t, testPM(), []string{"cron", "add", "myjob", "--command", "/bin/test"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "required flag")
+}
+
+func TestCronAdd_MissingCommand(t *testing.T) {
+	_, err := executeWithPM(t, testPM(), []string{"cron", "add", "myjob", "--schedule", "0 3 * * *"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "required flag")
+}
+
+func TestCronAdd_Success(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"myjob", "--schedule", "0 3 * * *", "--command", "/bin/test"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Added")
+	assert.Contains(t, buf.String(), "myjob")
+
+	job, err := cs.Get("myjob")
+	require.NoError(t, err)
+	assert.Equal(t, "0 3 * * *", job.Schedule)
+}
+
+func TestCronAdd_Duplicate(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+	cs.Save(cron.Job{Name: "dup"})
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"dup", "--schedule", "0 3 * * *", "--command", "/bin/test"})
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already exists")
+}
+
+
+
+func TestCronInit_CreatesFile(t *testing.T) {
+	out, err := executeWithPM(t, testPM(), []string{"cron", "init", "--output", t.TempDir() + "/cron.json"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "Wrote template")
+}
+
+func TestCronInit_CustomOutput(t *testing.T) {
+	dir := t.TempDir()
+	out, err := executeWithPM(t, testPM(), []string{"cron", "init", "--output", dir + "/my-cron.json"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "Wrote template")
+	_, err = os.Stat(dir + "/my-cron.json")
+	require.NoError(t, err)
+}
+
+func TestCronList_Empty(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronListCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "No cron jobs configured")
+}
+
+func TestCronList_WithJobs(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cs.Save(cron.Job{Name: "alpha", Schedule: "0 1 * * *", Command: "/bin/a", Enabled: true})
+	cs.Save(cron.Job{Name: "beta", Schedule: "0 2 * * *", Command: "/bin/b", Enabled: false})
+
+	cmd := newCronListCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "alpha")
+	assert.Contains(t, buf.String(), "beta")
+	assert.Contains(t, buf.String(), "disabled")
+}
+
+func TestCronRemove_Success(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cs.Save(cron.Job{Name: "rm-me", Schedule: "0 3 * * *", Command: "/bin/rm"})
+	cc.Install(cron.Job{Name: "rm-me", Schedule: "0 3 * * *", Command: "/bin/rm"})
+
+	cmd := newCronRemoveCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"rm-me"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Removed")
+
+	_, err = cs.Get("rm-me")
+	require.Error(t, err)
+}
+
+func TestCronRemove_NotFound(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronRemoveCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"ghost"})
+	err := cmd.Execute()
+	require.NoError(t, err) // store.Delete ignores not-exist
+}
+
+func TestCronEnable_Success(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: false})
+	cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: false})
+
+	cmd := newCronEnableCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"myjob"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Enabled")
+
+	job, _ := cs.Get("myjob")
+	assert.True(t, job.Enabled)
+}
+
+func TestCronEnable_NotFound(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronEnableCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"ghost"})
+	err := cmd.Execute()
+	require.Error(t, err)
+}
+
+func TestCronDisable_Success(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+	cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+
+	cmd := newCronDisableCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"myjob"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "Disabled")
+
+	job, _ := cs.Get("myjob")
+	assert.False(t, job.Enabled)
+}
+
+func TestCronDisable_NotFound(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronDisableCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"ghost"})
+	err := cmd.Execute()
+	require.Error(t, err)
+}
+
+func TestCronStatus_Active(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+	cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+
+	cmd := newCronStatusCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"myjob"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "active")
+	assert.Contains(t, buf.String(), "Cron daemon: running")
+}
+
+func TestCronStatus_CronDown(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	cc.cronRunning = false
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+
+	cmd := newCronStatusCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"myjob"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "cron_down")
+}
+
+func TestCronStatus_Unknown(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronStatusCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"unknown"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "unknown")
+}
+
+func TestCronStatus_Missing(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cs.Save(cron.Job{Name: "orphan", Schedule: "0 3 * * *", Command: "/bin/orphan", Enabled: true})
+	// Do NOT install in crontab
+
+	cmd := newCronStatusCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"orphan"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "missing")
+}
+
+func TestCronAdd_WithConfigFile_Single(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte(`{"name":"myjob","schedule":"0 3 * * *","command":"/bin/test"}`), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--config", cfgFile})
+	err = cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "1 cron job(s) added")
+}
+
+func TestCronAdd_WithConfigFile_Array(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte(`{"crons":[{"name":"a","schedule":"0 1 * * *","command":"cmd1"},{"name":"b","schedule":"0 2 * * *","command":"cmd2"}]}`), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--config", cfgFile})
+	err = cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "2 cron job(s) added")
+}
+
+func TestCronAdd_WithConfigFile_NameFilter(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte(`{"crons":[{"name":"app1","schedule":"0 1 * * *","command":"cmd1"},{"name":"app2","schedule":"0 2 * * *","command":"cmd2"}]}`), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"app1", "--config", cfgFile})
+	err = cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "1 cron job(s) added")
+}
+
+func TestCronAdd_WithConfigFile_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte("{broken"), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--config", cfgFile})
+	err = cmd.Execute()
+	require.Error(t, err)
+}
+
+func TestCronHelp(t *testing.T) {
+	out, err := executeWithPM(t, testPM(), []string{"cron", "--help"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "init")
+	assert.Contains(t, out, "add")
+	assert.Contains(t, out, "list")
+	assert.Contains(t, out, "remove")
+	assert.Contains(t, out, "enable")
+	assert.Contains(t, out, "disable")
+	assert.Contains(t, out, "status")
+}
+
+func TestCronInit_HelpShowsFlag(t *testing.T) {
+	out, err := executeWithPM(t, testPM(), []string{"cron", "init", "--help"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "--output")
+}
+
+func TestCronStatus_MissingName(t *testing.T) {
+	_, err := executeWithPM(t, testPM(), []string{"cron", "status"})
+	require.Error(t, err)
+}
+
+func TestCronRemove_MissingName(t *testing.T) {
+	_, err := executeWithPM(t, testPM(), []string{"cron", "remove"})
+	require.Error(t, err)
+}
+
+func TestCronEnable_MissingName(t *testing.T) {
+	_, err := executeWithPM(t, testPM(), []string{"cron", "enable"})
+	require.Error(t, err)
+}
+
+func TestCronDisable_MissingName(t *testing.T) {
+	_, err := executeWithPM(t, testPM(), []string{"cron", "disable"})
+	require.Error(t, err)
+}
+
+func TestCronCtx_Empty(t *testing.T) {
+	_, _, ok := cronFromCtx(context.Background())
+	assert.False(t, ok)
+}
+
+func TestCronCtx_Roundtrip(t *testing.T) {
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	ctx := cronCtx(context.Background(), cs, cc)
+	gotStore, gotClient, ok := cronFromCtx(ctx)
+	assert.True(t, ok)
+	assert.Same(t, cs, gotStore)
+	assert.Same(t, cc, gotClient)
+}
+
+func TestAddCronFromConfig_InvalidJobInConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte(`{"crons":[{"name":"","schedule":"0 1 * * *","command":"cmd1"}]}`), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--config", cfgFile})
+	err = cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, buf.String(), "Warning")
+}
+
+func TestAddCronFromConfig_DuplicateInConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte(`{"name":"dup","schedule":"0 1 * * *","command":"cmd1"}`), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	cs.Save(cron.Job{Name: "dup", Schedule: "0 1 * * *", Command: "cmd1"})
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--config", cfgFile})
+	err = cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, buf.String(), "already exists")
+}
+
+func TestCronInit_DefaultOutput(t *testing.T) {
+	dir := t.TempDir()
+	origWd, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origWd)
+
+	cmd := newCronInitCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "cronfile.json")
+	_, err = os.Stat("cronfile.json")
+	require.NoError(t, err)
+	os.Remove("cronfile.json")
+}
+
+func TestAddCronFromConfig_InstallError(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte(`{"name":"failjob","schedule":"0 1 * * *","command":"cmd1"}`), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	cc.installErr = fmt.Errorf("crontab unavailable")
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"--config", cfgFile})
+	err = cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, buf.String(), "Error installing")
+}
+
+func TestCronAdd_WithConfigFile_NameFilterNotFound(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := dir + "/cron.json"
+	err := os.WriteFile(cfgFile, []byte(`{"crons":[{"name":"app1","schedule":"0 1 * * *","command":"cmd1"}]}`), 0600)
+	require.NoError(t, err)
+
+	cs := newMockCronStore()
+	cc := newMockCronClient()
+	pm := testPM()
+	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
+
+	cmd := newCronAddCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetContext(ctx)
+	cmd.SetArgs([]string{"unknown", "--config", cfgFile})
+	err = cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, buf.String(), "0 cron job(s) added")
 }
 
 func TestLogSaveStatus_Enabled(t *testing.T) {

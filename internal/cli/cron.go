@@ -25,6 +25,18 @@ func newCronCmd() *cobra.Command {
 	return cmd
 }
 
+func initCronCtx(cmd *cobra.Command) (cron.Store, cron.Client, error) {
+	store, client, ok := cronFromCtx(cmd.Context())
+	if ok {
+		return store, client, nil
+	}
+	store, err := cron.NewStore()
+	if err != nil {
+		return nil, nil, fmt.Errorf("initializing cron store: %w", err)
+	}
+	return store, cron.NewClient(), nil
+}
+
 func newCronInitCmd() *cobra.Command {
 	var output string
 
@@ -87,9 +99,9 @@ func newCronAddCmd() *cobra.Command {
 				return fmt.Errorf("required flag(s) \"command\" not set")
 			}
 
-			store, err := cron.NewStore()
+			store, client, err := initCronCtx(cmd)
 			if err != nil {
-				return fmt.Errorf("initializing cron store: %w", err)
+				return err
 			}
 
 			if _, err := store.Get(name); err == nil {
@@ -112,7 +124,6 @@ func newCronAddCmd() *cobra.Command {
 				return fmt.Errorf("saving cron job: %w", err)
 			}
 
-			client := cron.NewClient()
 			if err := client.Install(job); err != nil {
 				return fmt.Errorf("installing crontab entry: %w", err)
 			}
@@ -146,15 +157,17 @@ func addCronFromConfig(cmd *cobra.Command, path string, args []string) error {
 		filterName = args[0]
 	}
 
-	store, err := cron.NewStore()
+	store, client, err := initCronCtx(cmd)
 	if err != nil {
-		return fmt.Errorf("initializing cron store: %w", err)
+		return err
 	}
 
-	client := cron.NewClient()
-
 	var added, errors int
+	var matched bool
 	for _, job := range jobs {
+		if filterName != "" && job.Name == filterName {
+			matched = true
+		}
 		if filterName != "" && job.Name != filterName {
 			continue
 		}
@@ -190,6 +203,11 @@ func addCronFromConfig(cmd *cobra.Command, path string, args []string) error {
 		added++
 	}
 
+	if filterName != "" && !matched {
+		fmt.Fprintf(cmd.OutOrStdout(), "0 cron job(s) added, 0 error(s)\n")
+		return fmt.Errorf("cron job %q not found in config file", filterName)
+	}
+
 	fmt.Fprintf(cmd.OutOrStdout(), "%d cron job(s) added, %d error(s)\n", added, errors)
 
 	if errors > 0 {
@@ -203,9 +221,9 @@ func newCronListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List configured cron jobs",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := cron.NewStore()
+			store, _, err := initCronCtx(cmd)
 			if err != nil {
-				return fmt.Errorf("initializing cron store: %w", err)
+				return err
 			}
 
 			jobs, err := store.List()
@@ -237,17 +255,15 @@ func newCronRemoveCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-
-			store, err := cron.NewStore()
+			store, client, err := initCronCtx(cmd)
 			if err != nil {
-				return fmt.Errorf("initializing cron store: %w", err)
+				return err
 			}
 
 			if err := store.Delete(name); err != nil {
 				return fmt.Errorf("deleting cron job from store: %w", err)
 			}
 
-			client := cron.NewClient()
 			if err := client.Remove(name); err != nil && err != cron.ErrNotFound {
 				return fmt.Errorf("removing crontab entry: %w", err)
 			}
@@ -265,10 +281,9 @@ func newCronEnableCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-
-			store, err := cron.NewStore()
+			store, client, err := initCronCtx(cmd)
 			if err != nil {
-				return fmt.Errorf("initializing cron store: %w", err)
+				return err
 			}
 
 			job, err := store.Get(name)
@@ -276,7 +291,6 @@ func newCronEnableCmd() *cobra.Command {
 				return fmt.Errorf("cron job %q not found in store", name)
 			}
 
-			client := cron.NewClient()
 			if err := client.Enable(name); err != nil {
 				return fmt.Errorf("enabling crontab entry: %w", err)
 			}
@@ -299,10 +313,9 @@ func newCronDisableCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-
-			store, err := cron.NewStore()
+			store, client, err := initCronCtx(cmd)
 			if err != nil {
-				return fmt.Errorf("initializing cron store: %w", err)
+				return err
 			}
 
 			job, err := store.Get(name)
@@ -310,7 +323,6 @@ func newCronDisableCmd() *cobra.Command {
 				return fmt.Errorf("cron job %q not found in store", name)
 			}
 
-			client := cron.NewClient()
 			if err := client.Disable(name); err != nil {
 				return fmt.Errorf("disabling crontab entry: %w", err)
 			}
@@ -333,19 +345,16 @@ func newCronStatusCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-
-			client := cron.NewClient()
+			store, client, err := initCronCtx(cmd)
+			if err != nil {
+				return err
+			}
 
 			running, err := client.IsCronRunning()
 			if err != nil || !running {
 				fmt.Fprintf(cmd.OutOrStdout(), "Cron daemon: not running\n")
 				fmt.Fprintf(cmd.OutOrStdout(), "Job %q: cron_down\n", name)
 				return nil
-			}
-
-			store, err := cron.NewStore()
-			if err != nil {
-				return fmt.Errorf("initializing cron store: %w", err)
 			}
 
 			_, storeErr := store.Get(name)

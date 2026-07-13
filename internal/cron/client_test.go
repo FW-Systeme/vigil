@@ -624,6 +624,43 @@ func TestGet_WithMockExec(t *testing.T) {
 	assert.Equal(t, "/bin/getter", job.Command)
 }
 
+func TestNewClient(t *testing.T) {
+	client := NewClient()
+	require.NotNil(t, client)
+	_, ok := client.(*cronClient)
+	assert.True(t, ok)
+}
+
+func TestClientList_WithMockExec(t *testing.T) {
+	client := &cronClient{
+		execCommand: func(name string, args ...string) *exec.Cmd {
+			if args[0] == "-l" {
+				return exec.Command("printf", "# vigil-cron: job1\n0 3 * * * /bin/job1\n# vigil-cron: job2\n0 4 * * * /bin/job2\n")
+			}
+			return exec.Command("echo")
+		},
+	}
+	jobs, err := client.List()
+	require.NoError(t, err)
+	require.Len(t, jobs, 2)
+	assert.Equal(t, "job1", jobs[0].Name)
+	assert.Equal(t, "job2", jobs[1].Name)
+}
+
+func TestClientList_Empty_WithMockExec(t *testing.T) {
+	client := &cronClient{
+		execCommand: func(name string, args ...string) *exec.Cmd {
+			if args[0] == "-l" {
+				return exec.Command("sh", "-c", "exit 1")
+			}
+			return exec.Command("echo")
+		},
+	}
+	jobs, err := client.List()
+	require.NoError(t, err)
+	assert.Empty(t, jobs)
+}
+
 func TestGet_NotFound_WithMockExec(t *testing.T) {
 	client := &cronClient{
 		execCommand: func(name string, args ...string) *exec.Cmd {
@@ -652,6 +689,42 @@ func TestIsCronRunning_UsesExecCommand(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, running)
 	assert.True(t, execCalled)
+}
+
+func TestIsCronRunning_AllProbesFail(t *testing.T) {
+	client := &cronClient{
+		execCommand: func(name string, args ...string) *exec.Cmd {
+			return exec.Command("sh", "-c", "exit 1")
+		},
+	}
+	running, err := client.IsCronRunning()
+	require.NoError(t, err)
+	assert.False(t, running)
+}
+
+func TestWriteLines_Error(t *testing.T) {
+	client := &cronClient{
+		execCommand: func(name string, args ...string) *exec.Cmd {
+			if args[0] == "-" {
+				return exec.Command("sh", "-c", "exit 1")
+			}
+			return exec.Command("echo")
+		},
+	}
+	err := client.writeLines([]string{"test"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "writing crontab")
+}
+
+func TestReadLines_ErrorStillReturnsEmpty(t *testing.T) {
+	client := &cronClient{
+		execCommand: func(name string, args ...string) *exec.Cmd {
+			return exec.Command("false")
+		},
+	}
+	lines, err := client.readLines()
+	require.NoError(t, err)
+	assert.Empty(t, lines)
 }
 
 // --- Compile checks ---
