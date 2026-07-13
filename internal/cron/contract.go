@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("cron job not found")
-	ErrAlreadyExists = errors.New("cron job already exists")
+	ErrNotFound       = errors.New("cron job not found")
+	ErrAlreadyExists  = errors.New("cron job already exists")
 	ErrCronNotRunning = errors.New("cron daemon is not running")
 )
 
