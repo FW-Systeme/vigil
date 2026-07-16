@@ -17,11 +17,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	VigilBin    = "/home/chhu/projects/msl5/Virgil/vigil"
-	FixturesDir = "/home/chhu/projects/msl5/Virgil/e2e/fixtures"
-	NodeBin     = "/home/chhu/.nvm/versions/node/v24.14.0/bin/node"
+var (
+	VigilBin    string
+	FixturesDir string
+	NodeBin    string
 )
+
+func init() {
+	if b := os.Getenv("VIRGIL_E2E_BIN"); b != "" {
+		VigilBin = b
+	} else if b, err := exec.LookPath("vigil"); err == nil {
+		VigilBin = b
+	} else {
+		VigilBin = "./vigil"
+	}
+
+	if d := os.Getenv("VIRGIL_E2E_FIXTURES"); d != "" {
+		FixturesDir = d
+	} else {
+		FixturesDir = "/home/chhu/projects/msl5/Virgil/e2e/fixtures"
+	}
+
+	if nb := os.Getenv("VIRGIL_E2E_NODE_BIN"); nb != "" {
+		NodeBin = nb
+	} else if b, err := exec.LookPath("node"); err == nil {
+		NodeBin = b
+	} else {
+		NodeBin = "/home/chhu/.nvm/versions/node/v24.14.0/bin/node"
+	}
+}
 
 type Result struct {
 	Stdout   string
