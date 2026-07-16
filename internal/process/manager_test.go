@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chris576/vigil/internal/nginx"
-	"github.com/chris576/vigil/internal/systemd"
+	"github.com/FW-Systeme/Virgil/internal/nginx"
+	"github.com/FW-Systeme/Virgil/internal/systemd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/chris576/vigil/internal/update"
+	"github.com/FW-Systeme/Virgil/internal/update"
 	"github.com/spf13/cobra"
 )
 

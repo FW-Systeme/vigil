@@ -3,8 +3,8 @@ package cli
 import (
 	"context"
 
-	"github.com/chris576/vigil/internal/cron"
-	"github.com/chris576/vigil/internal/process"
+	"github.com/FW-Systeme/Virgil/internal/cron"
+	"github.com/FW-Systeme/Virgil/internal/process"
 )
 
 type ctxKey string

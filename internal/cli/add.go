@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/chris576/vigil/internal/process"
+	"github.com/FW-Systeme/Virgil/internal/process"
 	"github.com/spf13/cobra"
 )
 

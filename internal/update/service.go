@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/chris576/vigil/internal/process"
+	"github.com/FW-Systeme/Virgil/internal/process"
 )
 
 type service struct {

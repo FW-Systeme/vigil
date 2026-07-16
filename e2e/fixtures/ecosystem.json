@@ -1,0 +1,12 @@
+{
+  "apps": [
+    {
+      "name": "dummy-app",
+      "type": "node",
+      "entry": "server.js",
+      "port": 3000,
+      "working_dir": "/e2e/fixtures/dummy-app",
+      "smoke_test_script": "/e2e/fixtures/smoke-pass.sh"
+    }
+  ]
+}

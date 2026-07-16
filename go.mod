@@ -1,4 +1,4 @@
-module github.com/chris576/vigil
+module github.com/FW-Systeme/Virgil
 
 go 1.22.2
 

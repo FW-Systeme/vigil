@@ -19,8 +19,15 @@ var (
 
 	journalctlCmd = "journalctl"
 	systemctlCmd  = "systemctl"
-	logrotateDir  = "/etc/logrotate.d"
+	logrotateDir  string
 )
+
+func init() {
+	logrotateDir = os.Getenv("VIRGIL_LOGROTATE_DIR")
+	if logrotateDir == "" {
+		logrotateDir = "/etc/logrotate.d"
+	}
+}
 
 type client struct {
 	conn *dbus.Conn
@@ -35,7 +42,11 @@ func New() (Client, error) {
 }
 
 var unitPath = func(name string) string {
-	return filepath.Join("/etc/systemd/system", name+".service")
+	base := os.Getenv("VIRGIL_SYSTEMD_DIR")
+	if base == "" {
+		base = "/etc/systemd/system"
+	}
+	return filepath.Join(base, name+".service")
 }
 
 func (c *client) StartUnit(ctx context.Context, name string) error {

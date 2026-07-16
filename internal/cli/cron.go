@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/chris576/vigil/internal/cron"
+	"github.com/FW-Systeme/Virgil/internal/cron"
 	"github.com/spf13/cobra"
 )
 

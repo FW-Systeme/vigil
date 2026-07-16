@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/chris576/vigil/internal/nginx"
-	"github.com/chris576/vigil/internal/systemd"
+	"github.com/FW-Systeme/Virgil/internal/nginx"
+	"github.com/FW-Systeme/Virgil/internal/systemd"
 )
 
 type Manager struct {

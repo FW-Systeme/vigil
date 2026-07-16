@@ -202,9 +202,17 @@ func (c *client) RemoveLogging(name string) error {
 }
 
 var availablePath = func(name string) string {
-	return "/etc/nginx/sites-available/" + name + ".conf"
+	base := os.Getenv("VIRGIL_NGINX_AVAILABLE_DIR")
+	if base == "" {
+		base = "/etc/nginx/sites-available"
+	}
+	return filepath.Join(base, name+".conf")
 }
 
 var enabledPath = func(name string) string {
-	return "/etc/nginx/sites-enabled/" + name + ".conf"
+	base := os.Getenv("VIRGIL_NGINX_ENABLED_DIR")
+	if base == "" {
+		base = "/etc/nginx/sites-enabled"
+	}
+	return filepath.Join(base, name+".conf")
 }

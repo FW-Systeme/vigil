@@ -13,15 +13,17 @@ type jsonFileStore struct {
 }
 
 func NewStore() (Store, error) {
-	var baseDir string
-	if os.Geteuid() == 0 {
-		baseDir = "/etc/vigil"
-	} else {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
+	baseDir := os.Getenv("VIRGIL_HOME")
+	if baseDir == "" {
+		if os.Geteuid() == 0 {
+			baseDir = "/etc/vigil"
+		} else {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return nil, err
+			}
+			baseDir = filepath.Join(home, ".config", "vigil")
 		}
-		baseDir = filepath.Join(home, ".config", "vigil")
 	}
 
 	storageDir := filepath.Join(baseDir, "cron")

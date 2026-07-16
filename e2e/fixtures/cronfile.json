@@ -1,0 +1,9 @@
+{
+  "crons": [
+    {
+      "name": "test-cron",
+      "schedule": "*/5 * * * *",
+      "command": "echo 'vigil-e2e-test' >> /tmp/vigil-e2e-cron.log"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/chris576/vigil/internal/cli"
+	"github.com/FW-Systeme/Virgil/internal/cli"
 )
 
 var version = "dev"

@@ -1,2 +1,4 @@
 /vigil
 coverage.out
+*.out
+coverage.out

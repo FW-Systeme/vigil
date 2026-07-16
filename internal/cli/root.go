@@ -3,9 +3,9 @@ package cli
 import (
 	"fmt"
 
-	"github.com/chris576/vigil/internal/nginx"
-	"github.com/chris576/vigil/internal/process"
-	"github.com/chris576/vigil/internal/systemd"
+	"github.com/FW-Systeme/Virgil/internal/nginx"
+	"github.com/FW-Systeme/Virgil/internal/process"
+	"github.com/FW-Systeme/Virgil/internal/systemd"
 	"github.com/spf13/cobra"
 )
 
