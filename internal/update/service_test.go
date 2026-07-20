@@ -1022,6 +1022,130 @@ exit 1
 	assert.Equal(t, 2, ng.reloadCount)
 }
 
+func TestUpdate_StaticWithNginxConfig_NoExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	nginxAvailDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_AVAILABLE_DIR", nginxAvailDir)
+	nginxEnabledDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", nginxEnabledDir)
+
+	// No existing config — backup read fails silently
+
+	newConfig := "server { listen 8080; server_name new.example.com; root /var/www/current; }"
+	tarData := createTarGz(t, map[string]string{
+		"index.html": "<h1>Hello</h1>",
+		"nginx.conf": newConfig,
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	ng := &recorderNginx{}
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "my-site",
+		Type:            process.TypeStatic,
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+		Port:            8080,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, ng, nil)
+
+	err := svc.Update(context.Background(), "my-site", "v1.0.0")
+	require.NoError(t, err)
+
+	// Config should still be applied even without backup
+	require.Len(t, ng.enableCalls, 1)
+	assert.Equal(t, 1, ng.reloadCount)
+}
+
+func TestUpdate_StaticWithNginxConfig_EnableSiteError(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	nginxAvailDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_AVAILABLE_DIR", nginxAvailDir)
+	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", t.TempDir())
+
+	tarData := createTarGz(t, map[string]string{
+		"index.html": "<h1>Hello</h1>",
+		"nginx.conf": "config",
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	ng := &recorderNginx{enableErr: fmt.Errorf("simulated error")}
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "my-site",
+		Type:            process.TypeStatic,
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+		Port:            8080,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, ng, nil)
+
+	err := svc.Update(context.Background(), "my-site", "v1.0.0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "applying nginx site config")
+}
+
+func TestUpdate_StaticWithNginxConfig_ReloadError(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	nginxAvailDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_AVAILABLE_DIR", nginxAvailDir)
+	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", t.TempDir())
+
+	// Existing config so backup is available
+	os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte("old config"), 0644)
+
+	tarData := createTarGz(t, map[string]string{
+		"index.html": "<h1>Hello</h1>",
+		"nginx.conf": "new config",
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	ng := &recorderNginx{reloadErr: fmt.Errorf("simulated reload error")}
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "my-site",
+		Type:            process.TypeStatic,
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+		Port:            8080,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, ng, nil)
+
+	err := svc.Update(context.Background(), "my-site", "v1.0.0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reloading nginx after site config update")
+
+	// With backup available, EnableSiteFromFile called for both apply and restore
+	require.Len(t, ng.enableCalls, 2)
+}
+
 func TestUpdate_AppTypeWithNginxClientIgnored(t *testing.T) {
 	dir := t.TempDir()
 	setupDir(t, dir)
