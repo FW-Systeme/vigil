@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     cron \
     curl procps ca-certificates \
+    nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://go.dev/dl/go1.22.2.linux-amd64.tar.gz -o /tmp/go.tar.gz \
@@ -16,7 +17,5 @@ ENV PATH="/usr/local/go/bin:$PATH"
 ENV GOPATH="/go"
 ENV GOFLAGS=-mod=mod
 
-COPY vigil /usr/local/bin/vigil
-
 WORKDIR /src
-CMD ["/bin/bash"]
+CMD ["/lib/systemd/systemd"]

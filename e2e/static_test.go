@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAddStaticSite(t *testing.T) {
@@ -20,9 +22,10 @@ func TestAddStaticSite(t *testing.T) {
 	res := RunVigil("add", name,
 		"--type=static",
 		fmt.Sprintf("--port=%d", port),
-		"--build-dir=/e2e/fixtures/nginx-site",
+		fmt.Sprintf("--build-dir=%s/nginx-site", FixturesDir),
 		"--nginx-domain=test.local",
-		"--smoke-test-script=/e2e/fixtures/smoke-pass.sh",
+		fmt.Sprintf("--nginx-path=%s/nginx-site", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
 	)
 	RequireSuccess(t, res, "vigil add static")
 	assert.Contains(t, res.Stdout, "Registered app")
@@ -69,8 +72,17 @@ func TestStaticSiteLogs(t *testing.T) {
 
 	addStaticSite(t, name, port)
 
-	res := RunVigil("logs", name, "--lines=5")
+	res := RunCmd("curl", "-s", "-H", "Host: test.local", fmt.Sprintf("http://localhost:%d/", port))
+	require.Equal(t, 0, res.ExitCode, "curl should succeed")
+	require.NotEmpty(t, res.Stdout, "curl response should not be empty")
+
+	res = RunVigil("logs", name, "--lines=5")
 	RequireSuccess(t, res, "vigil logs static")
+	// retry in case nginx hasn't flushed the log entry yet
+	for i := 0; i < 5 && res.Stdout == ""; i++ {
+		time.Sleep(200 * time.Millisecond)
+		res = RunVigil("logs", name, "--lines=5")
+	}
 	assert.NotEmpty(t, res.Stdout, "logs should not be empty")
 }
 
@@ -79,11 +91,15 @@ func addStaticSite(t *testing.T, name string, port int) {
 	res := RunVigil("add", name,
 		"--type=static",
 		fmt.Sprintf("--port=%d", port),
-		"--build-dir=/e2e/fixtures/nginx-site",
+		fmt.Sprintf("--build-dir=%s/nginx-site", FixturesDir),
 		"--nginx-domain=test.local",
-		"--smoke-test-script=/e2e/fixtures/smoke-pass.sh",
+		fmt.Sprintf("--nginx-path=%s/nginx-site", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
 	)
 	RequireSuccess(t, res, "vigil add static")
+
+	res = RunVigil("start", name)
+	RequireSuccess(t, res, "vigil start static")
 }
 
 func cleanupStaticDefer(t *testing.T, name string) {

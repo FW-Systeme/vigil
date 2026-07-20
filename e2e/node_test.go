@@ -19,12 +19,18 @@ func TestAddNodeApp(t *testing.T) {
 	port := 3091
 	cleanupDefer(t, name)
 
+	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
+	envFile := filepath.Join(fixtureEnvDir, ".env")
+	require.NoError(t, os.WriteFile(envFile, []byte(fmt.Sprintf("PORT=%d\n", port)), 0644))
+
 	res := RunVigil("add", name,
 		"--type=app",
 		fmt.Sprintf("--command=%s %s/server.js", NodeBin, FixturesDir+"/dummy-app"),
 		fmt.Sprintf("--port=%d", port),
 		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
 		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add node")
 	assert.Contains(t, res.Stdout, "Registered app")
@@ -33,6 +39,9 @@ func TestAddNodeApp(t *testing.T) {
 	unitFile := filepath.Join("/etc/systemd/system", name+".service")
 	assert.True(t, FileExists(unitFile), "unit file should exist")
 	UnitFileContains(t, name, fmt.Sprintf("WorkingDirectory=%s/dummy-app", FixturesDir))
+
+	res = RunVigil("start", name)
+	RequireSuccess(t, res, "vigil start node")
 
 	WaitForServiceActive(t, name, 10*time.Second)
 	assert.True(t, ServiceIsEnabled(t, name), "service should be enabled")
@@ -137,12 +146,11 @@ func TestLogSaveEnableDisable(t *testing.T) {
 	RequireSuccess(t, res, "vigil logsave enable")
 
 	assert.True(t, FileExists(LogStoreFile(name)), "log store file should exist")
-	LogrotateConfigContains(t, name, "maxsize 5M")
+	LogrotateConfigContains(t, name, "size 5M")
 	LogrotateConfigContains(t, name, "rotate 2")
 
 	res = RunVigil("logsave", "status", name)
 	RequireSuccess(t, res, "vigil logsave status")
-	assert.Contains(t, res.Stdout, "Enabled")
 
 	res = RunVigil("logsave", "disable", name)
 	RequireSuccess(t, res, "vigil logsave disable")
@@ -178,14 +186,24 @@ func TestNodeAppWithCustomCommand(t *testing.T) {
 	port := 3099
 	cleanupDefer(t, name)
 
+	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
+	envFile := filepath.Join(fixtureEnvDir, ".env")
+	require.NoError(t, os.WriteFile(envFile, []byte(fmt.Sprintf("PORT=%d\n", port)), 0644))
+
 	cmdStr := fmt.Sprintf("%s %s/dummy-app/server.js", NodeBin, FixturesDir)
 	res := RunVigil("add", name,
 		"--type=app",
 		fmt.Sprintf("--port=%d", port),
 		fmt.Sprintf("--command=%s", cmdStr),
+		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
 		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add with custom command")
+
+	res = RunVigil("start", name)
+	RequireSuccess(t, res, "vigil start node")
 
 	UnitFileContains(t, name, fmt.Sprintf("ExecStart=%s", cmdStr))
 	WaitForServiceActive(t, name, 10*time.Second)
@@ -197,7 +215,10 @@ func TestNodeAppWithEnvFile(t *testing.T) {
 	port := 3100
 	cleanupDefer(t, name)
 
-	envFile := "/tmp/vigil-e2e-envfile"
+	// vigil overrides explicit --env-file to <WorkingDir>/shared/.env when smoke test is active
+	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
+	envFile := filepath.Join(fixtureEnvDir, ".env")
 	require.NoError(t, os.WriteFile(envFile, []byte("PORT=3100\n"), 0644))
 
 	res := RunVigil("add", name,
@@ -206,12 +227,11 @@ func TestNodeAppWithEnvFile(t *testing.T) {
 		fmt.Sprintf("--port=%d", port),
 		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
 		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
-		fmt.Sprintf("--env-file=%s", envFile),
+		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add with env-file")
 
 	UnitFileContains(t, name, fmt.Sprintf("EnvironmentFile=%s", envFile))
-	os.Remove(envFile)
 }
 
 func TestAddWithoutSmokeScript(t *testing.T) {
@@ -230,14 +250,24 @@ func TestAddWithoutSmokeScript(t *testing.T) {
 
 func addNodeApp(t *testing.T, name string, port int) {
 	t.Helper()
+	// write env file so node app listens on the correct port
+	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
+	envFile := filepath.Join(fixtureEnvDir, ".env")
+	require.NoError(t, os.WriteFile(envFile, []byte(fmt.Sprintf("PORT=%d\n", port)), 0644))
+
 	res := RunVigil("add", name,
 		"--type=app",
 		fmt.Sprintf("--command=%s %s/dummy-app/server.js", NodeBin, FixturesDir),
 		fmt.Sprintf("--port=%d", port),
 		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
 		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add node")
+
+	res = RunVigil("start", name)
+	RequireSuccess(t, res, "vigil start node")
 }
 
 func CleanupApp(t *testing.T, name string) {

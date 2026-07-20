@@ -109,7 +109,7 @@ func (c *client) DisableUnit(ctx context.Context, name string) error {
 	if c.conn == nil {
 		return errNoConn
 	}
-	_, err := c.conn.DisableUnitFilesContext(ctx, []string{unitPath(name)}, false)
+	_, err := c.conn.DisableUnitFilesContext(ctx, []string{name + ".service"}, false)
 	return err
 }
 

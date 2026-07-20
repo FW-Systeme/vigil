@@ -52,6 +52,16 @@ $ARGUMENTS
 - Coverage: ≥85%
 - Bei Fehlern: zurückschicken an Implementer/Tester
 
+### Phase 4b: E2E Validation
+- Rufe `/e2e-validate` auf
+- Prüfe Resultat:
+  - `PASSED` → weiter zu Phase 5
+  - `FAILED` → Fix-Schleife (max 3 Iterationen):
+    1. Logs aus `/e2e-validate` Report analysieren
+    2. **Implementer + Tester** mit konkreter Fehlerbeschreibung neu starten
+    3. Erneut `/e2e-validate`
+- Erst bei PASSED → Phase 5
+
 ### Phase 5: Commit & Push
 - `git add -A && git commit -m "feat: implement <feature>"`
 - `git push origin feature/<name>`

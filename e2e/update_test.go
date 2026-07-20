@@ -127,6 +127,8 @@ http.createServer((req, res) => {
 	pkgFile := filepath.Join(workDir, "incoming", version+".tar.gz")
 	require.NoError(t, createTarGz(appDir, pkgFile))
 	require.NoError(t, writeChecksum(pkgFile))
+	// create current symlink for release management
+	require.NoError(t, os.Symlink(workDir, filepath.Join(workDir, "current")))
 
 	res := RunVigil("add", name,
 		"--type=node",
@@ -137,6 +139,8 @@ http.createServer((req, res) => {
 		"--bundled-deps",
 	)
 	RequireSuccess(t, res, "vigil add for update test")
+	res = RunVigil("start", name)
+	RequireSuccess(t, res, "vigil start for update test")
 	WaitForServiceActive(t, name, 10*time.Second)
 	WaitForPortOpen(t, port, 10*time.Second)
 
@@ -199,6 +203,8 @@ http.createServer((req, res) => {
 	pkgFile := filepath.Join(workDir, "incoming", version+".tar.gz")
 	require.NoError(t, createTarGz(appDir, pkgFile))
 	require.NoError(t, writeChecksum(pkgFile))
+	// create current symlink for release management
+	require.NoError(t, os.Symlink(workDir, filepath.Join(workDir, "current")))
 
 	res := RunVigil("add", name,
 		"--type=node",
@@ -209,6 +215,8 @@ http.createServer((req, res) => {
 		"--bundled-deps",
 	)
 	RequireSuccess(t, res, "vigil add for lock test")
+	res = RunVigil("start", name)
+	RequireSuccess(t, res, "vigil start for lock test")
 	WaitForServiceActive(t, name, 10*time.Second)
 
 	lockPath := filepath.Join(workDir, ".vigil.lock")
