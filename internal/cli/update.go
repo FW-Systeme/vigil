@@ -41,7 +41,7 @@ The update process:
 				out = io.Discard
 			}
 
-			svc := update.NewService(pm.Store(), pm.RestartProcess, out)
+			svc := update.NewService(pm.Store(), pm.RestartProcess, pm.Nginx(), out)
 
 			if err := svc.Update(cmd.Context(), args[0], version); err != nil {
 				return err

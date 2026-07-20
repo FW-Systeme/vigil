@@ -30,58 +30,6 @@ jobs:
               {printf "FAIL: coverage %.1f%% < 85%%\n", $3; exit 1}
               else {printf "PASS: coverage %.1f%%\n", $3}}'
 
-  e2e:
-    needs: quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          cache: true
-
-      - name: Build vigil binary
-        run: go build -o vigil ./cmd/vigil/
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull test container
-        run: docker pull ghcr.io/${{ github.repository_owner }}/vigil-e2e:latest
-
-      - name: Start test container
-        run: |
-          docker run -d --name vigil-e2e-run --privileged --cgroupns=host --network host \
-            -v /sys/fs/cgroup:/sys/fs/cgroup:rw \
-            -v ${{ github.workspace }}:/src \
-            -v ${{ github.workspace }}/vigil:/usr/local/bin/vigil \
-            -v $(go env GOMODCACHE):/go/pkg/mod \
-            ghcr.io/${{ github.repository_owner }}/vigil-e2e:latest \
-            /lib/systemd/systemd
-
-      - name: Create temp dirs and fixture setup
-        run: |
-          docker exec vigil-e2e-run bash -c "mkdir -p /tmp/vigil-e2e-home /tmp/vigil-e2e-logrotate && ln -sfn . /src/e2e/fixtures/dummy-app/current && mkdir -p /src/e2e/fixtures/dummy-app/shared"
-
-      - name: E2E Tests
-        run: |
-          docker exec \
-            -e VIRGIL_E2E_FIXTURES=/src/e2e/fixtures \
-            -e VIRGIL_HOME=/tmp/vigil-e2e-home \
-            vigil-e2e-run \
-            go test -tags=e2e -v -count=1 -timeout 15m ./e2e/
-
-      - name: Cleanup
-        if: always()
-        run: |
-          docker stop vigil-e2e-run 2>/dev/null || true
-          docker rm vigil-e2e-run 2>/dev/null || true
-
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: quality

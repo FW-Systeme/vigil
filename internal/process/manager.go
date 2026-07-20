@@ -28,6 +28,8 @@ func New(store Store, systemdClient systemd.Client, nginxClient nginx.Client) *M
 
 func (m *Manager) Store() Store { return m.store }
 
+func (m *Manager) Nginx() nginx.Client { return m.nginx }
+
 func (m *Manager) AddProcess(ctx context.Context, p Process, force bool) error {
 	if err := p.Validate(); err != nil {
 		return err

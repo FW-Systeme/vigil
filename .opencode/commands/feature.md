@@ -2,8 +2,7 @@
 description: >
   Orchestriert den kompletten Feature-Workflow im Virgil-Go-Projekt.
   Erstellt Branch → Shared Contract (Go Interface) → Implement + Test (parallel) →
-  Quality (golangci-lint + Coverage) → Push → CI-Status via GitHub MCP →
-  ggf. Fix-Schleife.
+  Quality (golangci-lint + Coverage) → Unit + E2E-Tests lokal → Merge in main.
 agent: build
 ---
 
@@ -52,34 +51,21 @@ $ARGUMENTS
 - Coverage: ≥85%
 - Bei Fehlern: zurückschicken an Implementer/Tester
 
-### Phase 4b: E2E Validation
-- Rufe `/e2e-validate` auf
-- Prüfe Resultat:
-  - `PASSED` → weiter zu Phase 5
-  - `FAILED` → Fix-Schleife (max 3 Iterationen):
-    1. Logs aus `/e2e-validate` Report analysieren
-    2. **Implementer + Tester** mit konkreter Fehlerbeschreibung neu starten
-    3. Erneut `/e2e-validate`
-- Erst bei PASSED → Phase 5
-
-### Phase 5: Commit & Push
-- `git add -A && git commit -m "feat: implement <feature>"`
-- `git push origin feature/<name>`
-
-### Phase 6: CI-Status via GitHub MCP
-- Nutze GitHub MCP-Tool `get_workflow_run` oder `list_workflow_runs`
-- Filter auf: Branch = `feature/<name>`, Workflow = `ci-dev.yml`
-- Poll alle 30s bis `status = "completed"`
-- Prüfe `conclusion`: `"success"` oder `"failure"`
-
-### Phase 7: CI-Auswertung
-- **success** → Meldung an User: ✅ Feature `<feature>` fertig implementiert
-- **failure** → Fix-Schleife starten (maximal 5 Iterationen):
-  1. CI-Logs analysieren (via MCP Tool zum Log-Download)
+### Phase 5: Test-Validierung
+- Unit-Tests ausführen: `go test -race -count=1 ./...`
+- E2E-Tests ausführen: `make e2e-run 2>&1`
+- Prüfe Resultat beider Testläufe
+- Bei Fehlschlag: Fix-Schleife (max 3 Iterationen):
+  1. Fehlerlogs analysieren
   2. **Implementer + Tester** mit konkreter Fehlerbeschreibung neu starten
-  3. Änderungen aushandeln lassen
-  4. **Quality-Ensurance** erneut laufen lassen
-  5. Commit: `git add -A && git commit -m "fix: <feature> - <kurzbeschreibung>"`
-  6. `git push origin feature/<name>`
-  7. Zurück zu Phase 6
-- Nach 5 Iterationen ohne Erfolg: User um manuelle Hilfe bitten
+  3. **Quality-Ensurance** erneut laufen lassen
+  4. Zurück zu Phase 5
+- Erst bei bestandenen Tests → Phase 6
+
+### Phase 6: Lokale Integration
+- `git checkout main`
+- `git pull origin main`
+- `git merge feature/<name>`
+- Bei Konflikten: lösen, `git add` und `git commit`
+- `git push origin main`
+- Feature-Branch lokal löschen: `git branch -d feature/<name>`

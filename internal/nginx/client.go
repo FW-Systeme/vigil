@@ -201,6 +201,11 @@ func (c *client) RemoveLogging(name string) error {
 	return err
 }
 
+// SiteConfigPath returns the filesystem path for the nginx site config file.
+func SiteConfigPath(name string) string {
+	return availablePath(name)
+}
+
 var availablePath = func(name string) string {
 	base := os.Getenv("VIRGIL_NGINX_AVAILABLE_DIR")
 	if base == "" {

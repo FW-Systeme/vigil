@@ -14,20 +14,22 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/FW-Systeme/Virgil/internal/nginx"
 	"github.com/FW-Systeme/Virgil/internal/process"
 )
 
 type service struct {
 	store   process.Store
 	restart RestartFunc
+	nginx   nginx.Client
 	out     io.Writer
 }
 
-func NewService(store process.Store, restart RestartFunc, out io.Writer) Service {
+func NewService(store process.Store, restart RestartFunc, nginx nginx.Client, out io.Writer) Service {
 	if out == nil {
 		out = io.Discard
 	}
-	return &service{store: store, restart: restart, out: out}
+	return &service{store: store, restart: restart, nginx: nginx, out: out}
 }
 
 func (s *service) Update(ctx context.Context, name string, version string) error {
@@ -116,19 +118,65 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		return fmt.Errorf("switching symlink: %w", err)
 	}
 
-	fmt.Fprintln(s.out, "  Restarting service...")
-	if err := s.restart(ctx, name); err != nil {
-		rollbackSymlink(currentSymlink, oldTarget)
-		s.restart(ctx, name)
-		os.RemoveAll(releaseDir)
-		return fmt.Errorf("restart after update: %w", err)
+	nginxUpdated := false
+	var nginxBackup []byte
+
+	if p.Type == process.TypeStatic && s.nginx != nil {
+		nginxConfigPath := filepath.Join(releaseDir, "nginx.conf")
+		if _, err := os.Stat(nginxConfigPath); err == nil {
+			currentConfig := nginx.SiteConfigPath(name)
+			if data, rerr := os.ReadFile(currentConfig); rerr == nil {
+				nginxBackup = data
+			}
+
+			if err := s.nginx.EnableSiteFromFile(name, nginxConfigPath); err != nil {
+				rollbackSymlink(currentSymlink, oldTarget)
+				os.RemoveAll(releaseDir)
+				return fmt.Errorf("applying nginx site config: %w", err)
+			}
+			if err := s.nginx.Reload(ctx); err != nil {
+				if nginxBackup != nil {
+					bf := filepath.Join(workingDir, ".vigil-nginx-backup")
+					os.WriteFile(bf, nginxBackup, 0644)
+					s.nginx.EnableSiteFromFile(name, bf)
+					s.nginx.Reload(ctx)
+					os.Remove(bf)
+				}
+				rollbackSymlink(currentSymlink, oldTarget)
+				os.RemoveAll(releaseDir)
+				return fmt.Errorf("reloading nginx after site config update: %w", err)
+			}
+			nginxUpdated = true
+			fmt.Fprintln(s.out, "  Updated nginx site config")
+		}
+	}
+
+	if !nginxUpdated {
+		fmt.Fprintln(s.out, "  Restarting service...")
+		if err := s.restart(ctx, name); err != nil {
+			rollbackSymlink(currentSymlink, oldTarget)
+			s.restart(ctx, name)
+			os.RemoveAll(releaseDir)
+			return fmt.Errorf("restart after update: %w", err)
+		}
 	}
 
 	fmt.Fprintln(s.out, "  Running smoke test...")
 	if err := runScript(p.SmokeTestScript, releaseDir); err != nil {
 		fmt.Fprintln(s.out, "  Smoke test failed - rolling back...")
-		rollbackSymlink(currentSymlink, oldTarget)
-		s.restart(ctx, name)
+		if nginxUpdated {
+			if nginxBackup != nil {
+				bf := filepath.Join(workingDir, ".vigil-nginx-backup")
+				os.WriteFile(bf, nginxBackup, 0644)
+				s.nginx.EnableSiteFromFile(name, bf)
+				s.nginx.Reload(ctx)
+				os.Remove(bf)
+			}
+			rollbackSymlink(currentSymlink, oldTarget)
+		} else {
+			rollbackSymlink(currentSymlink, oldTarget)
+			s.restart(ctx, name)
+		}
 		return ErrRolledBack
 	}
 	fmt.Fprintln(s.out, "  Smoke test passed")
