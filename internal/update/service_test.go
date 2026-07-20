@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/FW-Systeme/Virgil/internal/nginx"
 	"github.com/FW-Systeme/Virgil/internal/process"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,7 +59,7 @@ func TestUpdate_NoWorkingDir(t *testing.T) {
 	svc := NewService(&mockStore{p: process.Process{
 		Name:            "app",
 		SmokeTestScript: "/nonexistent",
-	}}, nil, nil)
+	}}, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "working_dir")
@@ -74,7 +75,7 @@ func TestUpdate_ErrLocked(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil, nil)
+	svc := NewService(store, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrLocked)
 }
@@ -86,7 +87,7 @@ func TestUpdate_ErrNoPackage(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil, nil)
+	svc := NewService(store, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "")
 	assert.ErrorIs(t, err, ErrNoPackage)
 }
@@ -108,7 +109,7 @@ func TestUpdate_ErrIntegrity(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil, nil)
+	svc := NewService(store, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrIntegrity)
 }
@@ -140,7 +141,7 @@ exit 0
 	}}, func(ctx context.Context, name string) error {
 		restarted = true
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -182,7 +183,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, &buf)
+	}, nil, &buf)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -218,7 +219,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, io.Discard)
+	}, nil, io.Discard)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -246,7 +247,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "")
 	require.NoError(t, err)
@@ -284,7 +285,7 @@ exit 1
 	}}, func(ctx context.Context, name string) error {
 		restartCount++
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrRolledBack)
@@ -316,7 +317,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -352,7 +353,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v2.0.0")
 	require.NoError(t, err)
@@ -388,7 +389,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -431,7 +432,7 @@ exit 0
 			return fmt.Errorf("restart failed")
 		}
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
@@ -701,7 +702,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
@@ -811,6 +812,251 @@ exit 0
 `)
 	err := runScript(script, t.TempDir())
 	assert.NoError(t, err)
+}
+
+// recorderNginx records nginx calls and performs real file operations
+// but avoids calling the real nginx binary (Reload is a no-op).
+type recorderNginx struct {
+	nginx.Client
+	enableCalls []string
+	reloadCount int
+	enableErr   error
+	reloadErr   error
+}
+
+func (m *recorderNginx) EnableSiteFromFile(name string, configPath string) error {
+	if m.enableErr != nil {
+		return m.enableErr
+	}
+	m.enableCalls = append(m.enableCalls, configPath)
+	confPath := nginx.SiteConfigPath(name)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(confPath, data, 0644)
+}
+
+func (m *recorderNginx) Reload(ctx context.Context) error {
+	m.reloadCount++
+	return m.reloadErr
+}
+
+func TestUpdate_StaticWithNginxConfig(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	nginxAvailDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_AVAILABLE_DIR", nginxAvailDir)
+	nginxEnabledDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", nginxEnabledDir)
+
+	// Write initial template-generated config
+	initialConfig := "server { listen 8080; server_name old.example.com; root /var/www; }"
+	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(initialConfig), 0644)
+	require.NoError(t, err)
+	err = os.Symlink(filepath.Join(nginxAvailDir, "my-site.conf"), filepath.Join(nginxEnabledDir, "my-site.conf"))
+	require.NoError(t, err)
+
+	// Create release with nginx.conf
+	newConfig := "server { listen 8080; server_name new.example.com; root /var/www/current; }"
+	tarData := createTarGz(t, map[string]string{
+		"index.html": "<h1>Hello</h1>",
+		"nginx.conf": newConfig,
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	ng := &recorderNginx{}
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "my-site",
+		Type:            process.TypeStatic,
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+		Port:            8080,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, ng, nil)
+
+	err = svc.Update(context.Background(), "my-site", "v1.0.0")
+	require.NoError(t, err)
+
+	// Verify nginx site config was updated
+	data, err := os.ReadFile(filepath.Join(nginxAvailDir, "my-site.conf"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "new.example.com")
+
+	// Verify EnableSiteFromFile was called with release's nginx.conf
+	require.Len(t, ng.enableCalls, 1)
+	assert.Contains(t, ng.enableCalls[0], "nginx.conf")
+	assert.Contains(t, ng.enableCalls[0], "v1.0.0")
+
+	// Verify Reload was called (once for config update)
+	assert.Equal(t, 1, ng.reloadCount)
+}
+
+func TestUpdate_StaticWithoutNginxConfig(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	nginxAvailDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_AVAILABLE_DIR", nginxAvailDir)
+	nginxEnabledDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", nginxEnabledDir)
+
+	initialConfig := "server { listen 8080; server_name old.example.com; root /var/www; }"
+	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(initialConfig), 0644)
+	require.NoError(t, err)
+	err = os.Symlink(filepath.Join(nginxAvailDir, "my-site.conf"), filepath.Join(nginxEnabledDir, "my-site.conf"))
+	require.NoError(t, err)
+
+	tarData := createTarGz(t, map[string]string{
+		"index.html": "<h1>Hello</h1>",
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	ng := &recorderNginx{}
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "my-site",
+		Type:            process.TypeStatic,
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+		Port:            8080,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, ng, nil)
+
+	err = svc.Update(context.Background(), "my-site", "v1.0.0")
+	require.NoError(t, err)
+
+	// Without nginx.conf in release, existing behavior should apply
+	// (restart callback called, no nginx-specific calls)
+	assert.Empty(t, ng.enableCalls)
+	assert.Equal(t, 0, ng.reloadCount)
+}
+
+func TestUpdate_StaticWithNginxConfig_RollbackOnSmokeTestFailure(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	nginxAvailDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_AVAILABLE_DIR", nginxAvailDir)
+	nginxEnabledDir := t.TempDir()
+	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", nginxEnabledDir)
+
+	// Write initial old-style config
+	oldConfig := "server { listen 8080; server_name old.example.com; root /var/www; }"
+	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(oldConfig), 0644)
+	require.NoError(t, err)
+	err = os.Symlink(filepath.Join(nginxAvailDir, "my-site.conf"), filepath.Join(nginxEnabledDir, "my-site.conf"))
+	require.NoError(t, err)
+
+	// Old release exists (symlink target)
+	oldRelease := filepath.Join(dir, "releases", "v0.9.0")
+	os.MkdirAll(oldRelease, 0755)
+	os.WriteFile(filepath.Join(oldRelease, "index.html"), []byte("old"), 0644)
+	currentSymlink := filepath.Join(dir, "current")
+	os.Symlink(oldRelease, currentSymlink)
+
+	// New release with nginx.conf - smoke test will fail
+	newConfig := "server { listen 8080; server_name new.example.com; root /var/www/current; }"
+	tarData := createTarGz(t, map[string]string{
+		"index.html": "<h1>New</h1>",
+		"nginx.conf": newConfig,
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 1
+`)
+
+	restartCount := 0
+	ng := &recorderNginx{}
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "my-site",
+		Type:            process.TypeStatic,
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+		Port:            8080,
+	}}, func(ctx context.Context, name string) error {
+		restartCount++
+		return nil
+	}, ng, nil)
+
+	err = svc.Update(context.Background(), "my-site", "v1.0.0")
+	assert.ErrorIs(t, err, ErrRolledBack)
+
+	// Verify nginx config was restored to old config
+	data, err := os.ReadFile(filepath.Join(nginxAvailDir, "my-site.conf"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "old.example.com")
+
+	// Verify symlink reverted to old release
+	current, _ := os.Readlink(currentSymlink)
+	assert.Equal(t, oldRelease, current)
+
+	// Verify EnableSiteFromFile was called twice: apply + rollback
+	require.Len(t, ng.enableCalls, 2)
+	assert.Contains(t, ng.enableCalls[0], "nginx.conf")
+	assert.Contains(t, ng.enableCalls[0], "v1.0.0")
+	// Second call is restore from backup
+	assert.Contains(t, ng.enableCalls[1], ".vigil-nginx-backup")
+
+	// Reload called 2 times: apply, rollback restore
+	assert.Equal(t, 2, ng.reloadCount)
+}
+
+func TestUpdate_AppTypeWithNginxClientIgnored(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	tarData := createTarGz(t, map[string]string{
+		"server.js":     `console.log("ok");`,
+		"package.json":  `{"name":"app"}`,
+	})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	os.WriteFile(pkgPath, tarData, 0644)
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 0
+`)
+
+	ng := &recorderNginx{}
+	restarted := false
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "app",
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+	}}, func(ctx context.Context, name string) error {
+		restarted = true
+		return nil
+	}, ng, nil)
+
+	err := svc.Update(context.Background(), "app", "v1.0.0")
+	require.NoError(t, err)
+	assert.True(t, restarted)
+
+	// Nginx should not be involved for app type
+	assert.Empty(t, ng.enableCalls)
+	assert.Equal(t, 0, ng.reloadCount)
 }
 
 func setupDir(t *testing.T, dir string) {
