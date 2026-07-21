@@ -46,7 +46,8 @@ Control app. app type → systemctl. static type → nginx reload.
 ### `vigil update <name>`
 Release update for apps with --smoke-test-script. Flags:
 - `--version <string>` explicit version. Auto-detect from incoming/ if empty.
-- `--quiet` suppress progress output.
+- `--quiet` suppress stdout output.
+- `--log-output` write JSON-line log to `<working-dir>/.vigil-update.log` (append). Writes to stdout too unless --quiet.
 
 ### `vigil init`
 Generate ecosystem.json template.
@@ -64,7 +65,8 @@ Generate ecosystem.json template.
 ├── shared/             persistent data (.env, config) symlinked into each release
 ├── incoming/           upload .tar.gz packages here
 ├── current → releases/v1.0.0/  atomic symlink
-└── .vigil.lock         lock file (PID inside)
+├── .vigil.lock         lock file (PID inside)
+└── .vigil-update.log   JSON-line update log (when --log-output is used)
 ```
 
 ### Update Steps (13 steps)
@@ -98,18 +100,31 @@ Generate ecosystem.json template.
 ```
 
 ### Console Output (example)
+
+Output is structured JSON lines (one per event):
+
+```jsonl
+{"ts":"2026-07-21T10:30:01Z","event":"lock.acquired"}
+{"ts":"2026-07-21T10:30:01Z","event":"version.resolve","fields":{"version":"v1.2.0","source":"incoming"}}
+{"ts":"2026-07-21T10:30:02Z","event":"integrity.checked"}
+{"ts":"2026-07-21T10:30:02Z","event":"extract.start","fields":{"version":"v1.2.0"}}
+{"ts":"2026-07-21T10:30:05Z","event":"extract.done","fields":{"version":"v1.2.0"}}
+{"ts":"2026-07-21T10:30:05Z","event":"deps.install_start"}
+{"ts":"2026-07-21T10:30:12Z","event":"deps.install_done"}
+{"ts":"2026-07-21T10:30:12Z","event":"shared.link_done"}
+{"ts":"2026-07-21T10:30:12Z","event":"symlink.switch","fields":{"version":"v1.2.0"}}
+{"ts":"2026-07-21T10:30:13Z","event":"service.restart_done"}
+{"ts":"2026-07-21T10:30:14Z","event":"smoke_test.passed"}
+{"ts":"2026-07-21T10:30:14Z","event":"cleanup.done"}
+{"ts":"2026-07-21T10:30:14Z","event":"update.complete","fields":{"version":"v1.2.0"}}
+{"ts":"2026-07-21T10:30:14Z","event":"lock.released"}
 ```
-Lock acquired
-Using version v1.2.0
-Integrity check passed
-Extracting v1.2.0.tar.gz...
-Installing dependencies (npm ci)...
-Linking shared data...
-Switching symlink to v1.2.0...
-Restarting service...
-Running smoke test...
-Smoke test passed
-Cleaned up old releases
+
+Error/rollback path:
+```jsonl
+{"ts":"2026-07-21T10:30:14Z","event":"smoke_test.failed","fields":{"error":"exit status 1"}}
+{"ts":"2026-07-21T10:30:14Z","event":"rollback.start"}
+{"ts":"2026-07-21T10:30:14Z","event":"rollback.done"}
 ```
 
 ### Rollback

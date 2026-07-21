@@ -19,17 +19,15 @@ import (
 )
 
 type service struct {
-	store   process.Store
-	restart RestartFunc
-	nginx   nginx.Client
-	out     io.Writer
+	store     process.Store
+	restart   RestartFunc
+	nginx     nginx.Client
+	stdout    io.Writer
+	logOutput bool
 }
 
-func NewService(store process.Store, restart RestartFunc, nginx nginx.Client, out io.Writer) Service {
-	if out == nil {
-		out = io.Discard
-	}
-	return &service{store: store, restart: restart, nginx: nginx, out: out}
+func NewService(store process.Store, restart RestartFunc, nginx nginx.Client, stdout io.Writer, logOutput bool) Service {
+	return &service{store: store, restart: restart, nginx: nginx, stdout: stdout, logOutput: logOutput}
 }
 
 func (s *service) Update(ctx context.Context, name string, version string) error {
@@ -53,10 +51,28 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		return err
 	}
 	defer unlock()
-	fmt.Fprintln(s.out, "  Lock acquired")
+
+	var fw io.Writer
+	if s.logOutput {
+		logPath := filepath.Join(workingDir, ".vigil-update.log")
+		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return fmt.Errorf("opening log file: %w", err)
+		}
+		defer f.Close()
+		fw = f
+	}
+
+	log := NewLogger(s.stdout, fw)
+
+	log.Log("lock.acquired", nil)
+	defer func() {
+		log.Log("lock.released", nil)
+	}()
 
 	for _, d := range []string{releasesDir, sharedDir, incomingDir} {
 		if err := os.MkdirAll(d, 0755); err != nil {
+			log.Log("update.failed", map[string]any{"error": err.Error(), "step": "mkdir"})
 			return fmt.Errorf("creating dir %s: %w", d, err)
 		}
 	}
@@ -64,56 +80,66 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	if version == "" {
 		version, err = findVersion(incomingDir)
 		if err != nil {
+			log.Log("update.failed", map[string]any{"error": err.Error(), "step": "version.resolve"})
 			return err
 		}
-		fmt.Fprintf(s.out, "  Found package %s in incoming/\n", version)
+		log.Log("version.resolve", map[string]any{"version": version, "source": "incoming"})
 	} else {
-		fmt.Fprintf(s.out, "  Using version %s\n", version)
+		log.Log("version.resolve", map[string]any{"version": version, "source": "flag"})
 	}
 
 	pkgPath := filepath.Join(incomingDir, version+".tar.gz")
 	if err := verifyIntegrity(pkgPath); err != nil {
+		log.Log("integrity.failed", map[string]any{"error": err.Error()})
 		return err
 	}
-	fmt.Fprintln(s.out, "  Integrity check passed")
+	log.Log("integrity.checked", nil)
 
 	releaseDir := filepath.Join(releasesDir, version)
 	if _, err := os.Stat(releaseDir); err == nil {
 		os.RemoveAll(releaseDir)
 	}
 	if err := os.MkdirAll(releaseDir, 0755); err != nil {
+		log.Log("update.failed", map[string]any{"error": err.Error(), "step": "mkdir.release"})
 		return fmt.Errorf("creating release dir: %w", err)
 	}
 
-	fmt.Fprintf(s.out, "  Extracting %s...\n", version+".tar.gz")
+	log.Log("extract.start", map[string]any{"version": version})
 	if err := extractTarGz(pkgPath, releaseDir); err != nil {
+		log.Log("extract.failed", map[string]any{"error": err.Error()})
 		os.RemoveAll(releaseDir)
 		return err
 	}
+	log.Log("extract.done", map[string]any{"version": version})
 
 	if !p.BundledDeps {
-		fmt.Fprintln(s.out, "  Installing dependencies (npm ci)...")
+		log.Log("deps.install_start", nil)
 		if err := installDeps(releaseDir); err != nil {
+			log.Log("deps.install_failed", map[string]any{"error": err.Error()})
 			os.RemoveAll(releaseDir)
 			return err
 		}
+		log.Log("deps.install_done", nil)
 	} else {
-		fmt.Fprintln(s.out,  "  Skipping npm ci (bundled deps)")
+		log.Log("deps.skip", map[string]any{"reason": "bundled"})
 	}
 
-	fmt.Fprintln(s.out, "  Linking shared data...")
+	log.Log("shared.link_start", nil)
 	if err := linkShared(sharedDir, releaseDir); err != nil {
+		log.Log("shared.link_failed", map[string]any{"error": err.Error()})
 		os.RemoveAll(releaseDir)
 		return fmt.Errorf("linking shared: %w", err)
 	}
+	log.Log("shared.link_done", nil)
 
 	oldTarget := ""
 	if current, err := os.Readlink(currentSymlink); err == nil {
 		oldTarget = current
 	}
 
-	fmt.Fprintf(s.out, "  Switching symlink to %s...\n", version)
+	log.Log("symlink.switch", map[string]any{"version": version})
 	if err := switchSymlink(currentSymlink, releaseDir); err != nil {
+		log.Log("symlink.switch_failed", map[string]any{"error": err.Error()})
 		os.RemoveAll(releaseDir)
 		return fmt.Errorf("switching symlink: %w", err)
 	}
@@ -130,74 +156,82 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 			}
 
 			if err := s.nginx.EnableSiteFromFile(name, nginxConfigPath); err != nil {
+				log.Log("nginx.enable_failed", map[string]any{"error": err.Error()})
 				rollbackSymlink(currentSymlink, oldTarget)
 				os.RemoveAll(releaseDir)
 				return fmt.Errorf("applying nginx site config: %w", err)
 			}
 			if err := s.nginx.Reload(ctx); err != nil {
-			s.restoreNginxBackup(ctx, name, workingDir, nginxBackup)
-			rollbackSymlink(currentSymlink, oldTarget)
-			os.RemoveAll(releaseDir)
-			return fmt.Errorf("reloading nginx after site config update: %w", err)
-		}
-		nginxUpdated = true
-			fmt.Fprintln(s.out, "  Updated nginx site config")
+				s.restoreNginxBackup(ctx, name, workingDir, nginxBackup, log)
+				log.Log("nginx.reload_failed", map[string]any{"error": err.Error()})
+				rollbackSymlink(currentSymlink, oldTarget)
+				os.RemoveAll(releaseDir)
+				return fmt.Errorf("reloading nginx after site config update: %w", err)
+			}
+			nginxUpdated = true
+			log.Log("nginx.updated", nil)
 		}
 	}
 
 	if !nginxUpdated {
-		fmt.Fprintln(s.out, "  Restarting service...")
+		log.Log("service.restart_start", nil)
 		if err := s.restart(ctx, name); err != nil {
+			log.Log("service.restart_failed", map[string]any{"error": err.Error()})
 			rollbackSymlink(currentSymlink, oldTarget)
 			if rerr := s.restart(ctx, name); rerr != nil {
-				fmt.Fprintf(s.out, "  restart during rollback failed: %v\n", rerr)
+				log.Log("rollback.restart_failed", map[string]any{"error": rerr.Error()})
 			}
 			os.RemoveAll(releaseDir)
 			return fmt.Errorf("restart after update: %w", err)
 		}
+		log.Log("service.restart_done", nil)
 	}
 
-	fmt.Fprintln(s.out, "  Running smoke test...")
+	log.Log("smoke_test.start", nil)
 	if err := runScript(p.SmokeTestScript, releaseDir); err != nil {
-		fmt.Fprintln(s.out, "  Smoke test failed - rolling back...")
-	if nginxUpdated {
-		s.restoreNginxBackup(ctx, name, workingDir, nginxBackup)
-		rollbackSymlink(currentSymlink, oldTarget)
+		log.Log("smoke_test.failed", map[string]any{"error": err.Error()})
+		log.Log("rollback.start", nil)
+		if nginxUpdated {
+			s.restoreNginxBackup(ctx, name, workingDir, nginxBackup, log)
+			rollbackSymlink(currentSymlink, oldTarget)
 		} else {
 			rollbackSymlink(currentSymlink, oldTarget)
 			if err := s.restart(ctx, name); err != nil {
-				fmt.Fprintf(s.out, "  restart during rollback failed: %v\n", err)
+				log.Log("rollback.restart_failed", map[string]any{"error": err.Error()})
 			}
 		}
+		log.Log("rollback.done", nil)
 		return ErrRolledBack
 	}
-	fmt.Fprintln(s.out, "  Smoke test passed")
+	log.Log("smoke_test.passed", nil)
 
 	if err := cleanupReleases(releasesDir, version, 3); err != nil {
+		log.Log("cleanup.failed", map[string]any{"error": err.Error()})
 		return fmt.Errorf("cleaning up releases: %w", err)
 	}
-	fmt.Fprintln(s.out, "  Cleaned up old releases")
+	log.Log("cleanup.done", nil)
 
+	log.Log("update.complete", map[string]any{"version": version})
 	return nil
 }
 
-func (s *service) restoreNginxBackup(ctx context.Context, name, workingDir string, nginxBackup []byte) {
+func (s *service) restoreNginxBackup(ctx context.Context, name, workingDir string, nginxBackup []byte, log *Logger) {
 	if len(nginxBackup) == 0 {
 		return
 	}
 	bf := filepath.Join(workingDir, ".vigil-nginx-backup")
 	if err := os.WriteFile(bf, nginxBackup, 0600); err != nil {
-		fmt.Fprintf(s.out, "  failed to write nginx backup: %v\n", err)
+		log.Log("rollback.nginx_backup_write_failed", map[string]any{"error": err.Error()})
 		return
 	}
 	if err := s.nginx.EnableSiteFromFile(name, bf); err != nil {
-		fmt.Fprintf(s.out, "  failed to restore nginx config: %v\n", err)
+		log.Log("rollback.nginx_restore_failed", map[string]any{"error": err.Error()})
 	}
 	if err := s.nginx.Reload(ctx); err != nil {
-		fmt.Fprintf(s.out, "  failed to reload nginx after config restore: %v\n", err)
+		log.Log("rollback.nginx_reload_failed", map[string]any{"error": err.Error()})
 	}
 	if err := os.Remove(bf); err != nil {
-		fmt.Fprintf(s.out, "  failed to remove nginx backup file: %v\n", err)
+		log.Log("rollback.nginx_backup_remove_failed", map[string]any{"error": err.Error()})
 	}
 }
 
@@ -291,6 +325,7 @@ func extractTarGz(src, dest string) error {
 
 		switch header.Typeflag {
 		case tar.TypeDir:
+			//nolint:gosec // G115: tar header Mode from integrity-verified archive.
 			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
 				return err
 			}
@@ -298,6 +333,7 @@ func extractTarGz(src, dest string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 				return err
 			}
+			//nolint:gosec // G115: tar header Mode from integrity-verified archive.
 			of, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY, os.FileMode(header.Mode))
 			if err != nil {
 				return err
