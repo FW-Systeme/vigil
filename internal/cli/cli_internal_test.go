@@ -894,7 +894,7 @@ func TestCronAdd_Duplicate(t *testing.T) {
 	cc := newMockCronClient()
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
-	cs.Save(cron.Job{Name: "dup"})
+	require.NoError(t, cs.Save(cron.Job{Name: "dup"}))
 
 	cmd := newCronAddCmd()
 	buf := new(bytes.Buffer)
@@ -946,8 +946,8 @@ func TestCronList_WithJobs(t *testing.T) {
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
-	cs.Save(cron.Job{Name: "alpha", Schedule: "0 1 * * *", Command: "/bin/a", Enabled: true})
-	cs.Save(cron.Job{Name: "beta", Schedule: "0 2 * * *", Command: "/bin/b", Enabled: false})
+	require.NoError(t, cs.Save(cron.Job{Name: "alpha", Schedule: "0 1 * * *", Command: "/bin/a", Enabled: true}))
+	require.NoError(t, cs.Save(cron.Job{Name: "beta", Schedule: "0 2 * * *", Command: "/bin/b", Enabled: false}))
 
 	cmd := newCronListCmd()
 	buf := new(bytes.Buffer)
@@ -967,8 +967,8 @@ func TestCronRemove_Success(t *testing.T) {
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
-	cs.Save(cron.Job{Name: "rm-me", Schedule: "0 3 * * *", Command: "/bin/rm"})
-	cc.Install(cron.Job{Name: "rm-me", Schedule: "0 3 * * *", Command: "/bin/rm"})
+	require.NoError(t, cs.Save(cron.Job{Name: "rm-me", Schedule: "0 3 * * *", Command: "/bin/rm"}))
+	require.NoError(t, cc.Install(cron.Job{Name: "rm-me", Schedule: "0 3 * * *", Command: "/bin/rm"}))
 
 	cmd := newCronRemoveCmd()
 	buf := new(bytes.Buffer)
@@ -1006,8 +1006,8 @@ func TestCronEnable_Success(t *testing.T) {
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
-	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: false})
-	cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: false})
+	require.NoError(t, cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: false}))
+	require.NoError(t, cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: false}))
 
 	cmd := newCronEnableCmd()
 	buf := new(bytes.Buffer)
@@ -1045,8 +1045,8 @@ func TestCronDisable_Success(t *testing.T) {
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
-	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
-	cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+	require.NoError(t, cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true}))
+	require.NoError(t, cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true}))
 
 	cmd := newCronDisableCmd()
 	buf := new(bytes.Buffer)
@@ -1084,8 +1084,8 @@ func TestCronStatus_Active(t *testing.T) {
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
-	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
-	cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+	require.NoError(t, cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true}))
+	require.NoError(t, cc.Install(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true}))
 
 	cmd := newCronStatusCmd()
 	buf := new(bytes.Buffer)
@@ -1106,7 +1106,7 @@ func TestCronStatus_CronDown(t *testing.T) {
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
-	cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true})
+	require.NoError(t, cs.Save(cron.Job{Name: "myjob", Schedule: "0 3 * * *", Command: "/bin/test", Enabled: true}))
 
 	cmd := newCronStatusCmd()
 	buf := new(bytes.Buffer)
@@ -1142,7 +1142,7 @@ func TestCronStatus_Missing(t *testing.T) {
 	pm := testPM()
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
-	cs.Save(cron.Job{Name: "orphan", Schedule: "0 3 * * *", Command: "/bin/orphan", Enabled: true})
+	require.NoError(t, cs.Save(cron.Job{Name: "orphan", Schedule: "0 3 * * *", Command: "/bin/orphan", Enabled: true}))
 	// Do NOT install in crontab
 
 	cmd := newCronStatusCmd()
@@ -1327,7 +1327,7 @@ func TestAddCronFromConfig_DuplicateInConfig(t *testing.T) {
 	cs := newMockCronStore()
 	cc := newMockCronClient()
 	pm := testPM()
-	cs.Save(cron.Job{Name: "dup", Schedule: "0 1 * * *", Command: "cmd1"})
+	require.NoError(t, cs.Save(cron.Job{Name: "dup", Schedule: "0 1 * * *", Command: "cmd1"}))
 	ctx := cronCtx(pmCtx(context.Background(), pm), cs, cc)
 
 	cmd := newCronAddCmd()
@@ -1343,15 +1343,16 @@ func TestAddCronFromConfig_DuplicateInConfig(t *testing.T) {
 
 func TestCronInit_DefaultOutput(t *testing.T) {
 	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
+	origWd, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(dir))
+	defer func() { _ = os.Chdir(origWd) }()
 
 	cmd := newCronInitCmd()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	err := cmd.Execute()
+	err = cmd.Execute()
 	require.NoError(t, err)
 	assert.Contains(t, buf.String(), "cronfile.json")
 	_, err = os.Stat("cronfile.json")

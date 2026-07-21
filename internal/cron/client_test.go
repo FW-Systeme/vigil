@@ -384,7 +384,7 @@ func TestFindEntry_MultipleMarkers(t *testing.T) {
 	assert.Equal(t, 3, idx)
 	assert.False(t, disabled)
 
-	idx, disabled, found = findEntry(lines, "first")
+	idx, _, found = findEntry(lines, "first")
 	assert.True(t, found)
 	assert.Equal(t, 1, idx)
 }

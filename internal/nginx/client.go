@@ -45,7 +45,7 @@ func (c *client) EnableSiteFromFile(name string, configPath string) error {
 	if err != nil {
 		return fmt.Errorf("enabling nginx site from file: reading config: %w", err)
 	}
-	if err := os.WriteFile(confPath, data, 0644); err != nil {
+	if err := os.WriteFile(confPath, data, 0644); err != nil { //nolint:gosec // G306: nginx site configs must be readable by the web server; this is intentional.
 		return fmt.Errorf("enabling nginx site from file: writing config: %w", err)
 	}
 

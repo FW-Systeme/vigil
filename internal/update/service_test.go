@@ -68,7 +68,7 @@ func TestUpdate_NoWorkingDir(t *testing.T) {
 func TestUpdate_ErrLocked(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, ".vigil.lock")
-	os.WriteFile(lockPath, []byte("12345\n"), 0644)
+	require.NoError(t, os.WriteFile(lockPath, []byte("12345\n"), 0600))
 
 	store := &mockStore{p: process.Process{
 		Name:            "app",
@@ -95,14 +95,14 @@ func TestUpdate_ErrNoPackage(t *testing.T) {
 func TestUpdate_ErrIntegrity(t *testing.T) {
 	dir := t.TempDir()
 	incomingDir := filepath.Join(dir, "incoming")
-	os.MkdirAll(incomingDir, 0755)
+	require.NoError(t, os.MkdirAll(incomingDir, 0755))
 
 	pkgPath := filepath.Join(incomingDir, "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, []byte("corrupt data"), 0644)
+	require.NoError(t, os.WriteFile(pkgPath, []byte("corrupt data"), 0600))
 
 	hash := sha256.Sum256([]byte("different data"))
 	sumPath := pkgPath + ".sha256"
-	os.WriteFile(sumPath, []byte(hex.EncodeToString(hash[:])), 0644)
+	require.NoError(t, os.WriteFile(sumPath, []byte(hex.EncodeToString(hash[:])), 0600))
 
 	store := &mockStore{p: process.Process{
 		Name:            "app",
@@ -122,7 +122,7 @@ func TestUpdate_Success(t *testing.T) {
 		"package.json":  `{"name":"app"}`,
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -130,7 +130,7 @@ exit 0
 `)
 
 	sharedDir := filepath.Join(dir, "shared")
-	os.WriteFile(filepath.Join(sharedDir, ".env"), []byte("KEY=val\n"), 0644)
+	require.NoError(t, os.WriteFile(filepath.Join(sharedDir, ".env"), []byte("KEY=val\n"), 0600))
 
 	restarted := false
 	svc := NewService(&mockStore{p: process.Process{
@@ -168,7 +168,7 @@ func TestUpdate_OutputWritten(t *testing.T) {
 		"package.json":  `{"name":"app"}`,
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -205,7 +205,7 @@ func TestUpdate_DiscardOutput(t *testing.T) {
 	setupDir(t, dir)
 	tarData := createTarGz(t, map[string]string{"data": "x"})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -233,7 +233,7 @@ func TestUpdate_AutoDetectVersion(t *testing.T) {
 	setupDir(t, dir)
 	tarData := createTarGz(t, map[string]string{"data": "x"})
 	pkgPath := filepath.Join(dir, "incoming", "v2.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -261,15 +261,15 @@ func TestUpdate_RollbackOnSmokeTestFailure(t *testing.T) {
 	setupDir(t, dir)
 
 	oldRelease := filepath.Join(dir, "releases", "v0.9.0")
-	os.MkdirAll(oldRelease, 0755)
-	os.WriteFile(filepath.Join(oldRelease, "server.js"), []byte("old"), 0644)
+	require.NoError(t, os.MkdirAll(oldRelease, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(oldRelease, "server.js"), []byte("old"), 0600))
 
 	currentSymlink := filepath.Join(dir, "current")
-	os.Symlink(oldRelease, currentSymlink)
+	require.NoError(t, os.Symlink(oldRelease, currentSymlink))
 
 	tarData := createTarGz(t, map[string]string{"server.js": "new"})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -288,7 +288,7 @@ exit 1
 	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
-	assert.ErrorIs(t, err, ErrRolledBack)
+	require.ErrorIs(t, err, ErrRolledBack)
 
 	current, _ := os.Readlink(currentSymlink)
 	assert.Equal(t, oldRelease, current, "symlink should point back to old release")
@@ -303,7 +303,7 @@ func TestUpdate_BundledDepsSkipsNpmCI(t *testing.T) {
 		"node_modules/x": "preinstalled",
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -331,15 +331,15 @@ func TestUpdate_CleanupOldReleases(t *testing.T) {
 	setupDir(t, dir)
 
 	for _, v := range []string{"v1.0.0", "v1.1.0", "v1.2.0", "v1.3.0"} {
-		os.MkdirAll(filepath.Join(dir, "releases", v), 0755)
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "releases", v), 0755))
 	}
 
 	currentSymlink := filepath.Join(dir, "current")
-	os.Symlink(filepath.Join(dir, "releases", "v1.3.0"), currentSymlink)
+	require.NoError(t, os.Symlink(filepath.Join(dir, "releases", "v1.3.0"), currentSymlink))
 
 	tarData := createTarGz(t, map[string]string{"data": "x"})
 	pkgPath := filepath.Join(dir, "incoming", "v2.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -370,12 +370,12 @@ func TestUpdate_SharedSymlinks(t *testing.T) {
 	setupDir(t, dir)
 
 	sharedDir := filepath.Join(dir, "shared")
-	os.WriteFile(filepath.Join(sharedDir, ".env"), []byte("KEY=val\n"), 0644)
-	os.WriteFile(filepath.Join(sharedDir, "config.json"), []byte("{}"), 0644)
+	require.NoError(t, os.WriteFile(filepath.Join(sharedDir, ".env"), []byte("KEY=val\n"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(sharedDir, "config.json"), []byte("{}"), 0600))
 
 	tarData := createTarGz(t, map[string]string{"server.js": "content"})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -407,13 +407,13 @@ func TestUpdate_RestartFailure(t *testing.T) {
 	setupDir(t, dir)
 
 	oldRelease := filepath.Join(dir, "releases", "v0.9.0")
-	os.MkdirAll(oldRelease, 0755)
+	require.NoError(t, os.MkdirAll(oldRelease, 0755))
 	currentSymlink := filepath.Join(dir, "current")
-	os.Symlink(oldRelease, currentSymlink)
+	require.NoError(t, os.Symlink(oldRelease, currentSymlink))
 
 	tarData := createTarGz(t, map[string]string{"server.js": "new"})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -444,9 +444,9 @@ exit 0
 
 func TestFindVersion(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(dir, 0755)
-	os.WriteFile(filepath.Join(dir, "v1.0.0.tar.gz"), []byte("data"), 0644)
-	os.WriteFile(filepath.Join(dir, "v1.0.0.tar.gz.sha256"), []byte("sum"), 0644)
+	require.NoError(t, os.MkdirAll(dir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "v1.0.0.tar.gz"), []byte("data"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "v1.0.0.tar.gz.sha256"), []byte("sum"), 0600))
 
 	v, err := findVersion(dir)
 	require.NoError(t, err)
@@ -455,7 +455,7 @@ func TestFindVersion(t *testing.T) {
 
 func TestFindVersion_Empty(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(dir, 0755)
+	require.NoError(t, os.MkdirAll(dir, 0755))
 
 	_, err := findVersion(dir)
 	assert.ErrorIs(t, err, ErrNoPackage)
@@ -469,10 +469,10 @@ func TestFindVersion_MissingDir(t *testing.T) {
 func TestVerifyIntegrity_Mismatch(t *testing.T) {
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, "v1.0.0.tar.gz")
-	os.WriteFile(pkg, []byte("data"), 0644)
+	require.NoError(t, os.WriteFile(pkg, []byte("data"), 0600))
 
 	hash := sha256.Sum256([]byte("wrong"))
-	os.WriteFile(pkg+".sha256", []byte(hex.EncodeToString(hash[:])), 0644)
+	require.NoError(t, os.WriteFile(pkg+".sha256", []byte(hex.EncodeToString(hash[:])), 0600))
 
 	err := verifyIntegrity(pkg)
 	assert.ErrorIs(t, err, ErrIntegrity)
@@ -482,10 +482,10 @@ func TestVerifyIntegrity_Match(t *testing.T) {
 	dir := t.TempDir()
 	data := []byte("data")
 	pkg := filepath.Join(dir, "v1.0.0.tar.gz")
-	os.WriteFile(pkg, data, 0644)
+	require.NoError(t, os.WriteFile(pkg, data, 0600))
 
 	hash := sha256.Sum256(data)
-	os.WriteFile(pkg+".sha256", []byte(hex.EncodeToString(hash[:])), 0644)
+	require.NoError(t, os.WriteFile(pkg+".sha256", []byte(hex.EncodeToString(hash[:])), 0600))
 
 	err := verifyIntegrity(pkg)
 	assert.NoError(t, err)
@@ -494,7 +494,7 @@ func TestVerifyIntegrity_Match(t *testing.T) {
 func TestVerifyIntegrity_NoSumFile(t *testing.T) {
 	dir := t.TempDir()
 	pkg := filepath.Join(dir, "v1.0.0.tar.gz")
-	os.WriteFile(pkg, []byte("data"), 0644)
+	require.NoError(t, os.WriteFile(pkg, []byte("data"), 0600))
 
 	err := verifyIntegrity(pkg)
 	assert.NoError(t, err)
@@ -507,7 +507,7 @@ func TestExtractTarGz(t *testing.T) {
 		"app/lib/util.js": "util",
 	})
 	src := filepath.Join(dest, "pkg.tar.gz")
-	os.WriteFile(src, tarData, 0644)
+	require.NoError(t, os.WriteFile(src, tarData, 0600))
 
 	err := extractTarGz(src, filepath.Join(dest, "out"))
 	require.NoError(t, err)
@@ -519,7 +519,7 @@ func TestExtractTarGz(t *testing.T) {
 func TestExtractTarGz_InvalidGzip(t *testing.T) {
 	dest := t.TempDir()
 	src := filepath.Join(dest, "bad.tar.gz")
-	os.WriteFile(src, []byte("not gzip"), 0644)
+	require.NoError(t, os.WriteFile(src, []byte("not gzip"), 0600))
 
 	err := extractTarGz(src, filepath.Join(dest, "out"))
 	require.Error(t, err)
@@ -532,17 +532,18 @@ func TestExtractTarGz_WithDirEntry(t *testing.T) {
 	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
 
-	tw.WriteHeader(&tar.Header{Name: "subdir/", Typeflag: tar.TypeDir, Mode: 0755})
-	tw.WriteHeader(&tar.Header{Name: "subdir/file.txt", Size: int64(4), Mode: 0644})
-	tw.Write([]byte("data"))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "subdir/", Typeflag: tar.TypeDir, Mode: 0755}))
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "subdir/file.txt", Size: int64(4), Mode: 0644}))
+	_, err := tw.Write([]byte("data"))
+	require.NoError(t, err)
 
 	tw.Close()
 	gz.Close()
 
 	src := filepath.Join(dest, "pkg.tar.gz")
-	os.WriteFile(src, buf.Bytes(), 0644)
+	require.NoError(t, os.WriteFile(src, buf.Bytes(), 0600))
 
-	err := extractTarGz(src, filepath.Join(dest, "out"))
+	err = extractTarGz(src, filepath.Join(dest, "out"))
 	require.NoError(t, err)
 
 	assert.DirExists(t, filepath.Join(dest, "out", "subdir"))
@@ -555,7 +556,7 @@ func TestExtractTarGz_RejectsPathTraversal(t *testing.T) {
 		"../escape.txt": "bad",
 	})
 	src := filepath.Join(dest, "pkg.tar.gz")
-	os.WriteFile(src, tarData, 0644)
+	require.NoError(t, os.WriteFile(src, tarData, 0600))
 
 	err := extractTarGz(src, filepath.Join(dest, "out"))
 	require.NoError(t, err)
@@ -591,7 +592,7 @@ func TestRollbackSymlink_WithTarget(t *testing.T) {
 	dir := t.TempDir()
 	symPath := filepath.Join(dir, "link")
 	oldTarget := filepath.Join(dir, "old")
-	os.Symlink(oldTarget, symPath)
+	require.NoError(t, os.Symlink(oldTarget, symPath))
 
 	rollbackSymlink(symPath, oldTarget)
 	got, err := os.Readlink(symPath)
@@ -608,7 +609,7 @@ func TestRollbackSymlink_OldTargetGone(t *testing.T) {
 	dir := t.TempDir()
 	symPath := filepath.Join(dir, "link")
 	oldTarget := filepath.Join(dir, "nonexistent")
-	os.Symlink(oldTarget, symPath)
+	require.NoError(t, os.Symlink(oldTarget, symPath))
 
 	rollbackSymlink(symPath, oldTarget)
 	got, err := os.Readlink(symPath)
@@ -636,8 +637,8 @@ func TestLinkShared(t *testing.T) {
 	sharedDir := t.TempDir()
 	releaseDir := t.TempDir()
 
-	os.WriteFile(filepath.Join(sharedDir, "file1.txt"), []byte("a"), 0644)
-	os.WriteFile(filepath.Join(sharedDir, "file2.txt"), []byte("b"), 0644)
+	require.NoError(t, os.WriteFile(filepath.Join(sharedDir, "file1.txt"), []byte("a"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(sharedDir, "file2.txt"), []byte("b"), 0600))
 
 	err := linkShared(sharedDir, releaseDir)
 	require.NoError(t, err)
@@ -652,8 +653,8 @@ func TestLinkShared_OverwritesExisting(t *testing.T) {
 	sharedDir := t.TempDir()
 	releaseDir := t.TempDir()
 
-	os.WriteFile(filepath.Join(sharedDir, "config.json"), []byte(`{"shared":true}`), 0644)
-	os.WriteFile(filepath.Join(releaseDir, "config.json"), []byte(`{"old":true}`), 0644)
+	require.NoError(t, os.WriteFile(filepath.Join(sharedDir, "config.json"), []byte(`{"shared":true}`), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(releaseDir, "config.json"), []byte(`{"old":true}`), 0600))
 
 	err := linkShared(sharedDir, releaseDir)
 	require.NoError(t, err)
@@ -670,12 +671,12 @@ func TestLinkShared_SharedNotExist(t *testing.T) {
 
 func TestLinkShared_SymlinkError(t *testing.T) {
 	sharedDir := t.TempDir()
-	os.WriteFile(filepath.Join(sharedDir, "file.txt"), []byte("data"), 0644)
+	require.NoError(t, os.WriteFile(filepath.Join(sharedDir, "file.txt"), []byte("data"), 0600))
 
 	// releaseDir is a file, not a dir → symlink creation fails
 	releaseDir := t.TempDir()
 	releaseFile := filepath.Join(releaseDir, "not-a-dir")
-	os.WriteFile(releaseFile, []byte("x"), 0644)
+	require.NoError(t, os.WriteFile(releaseFile, []byte("x"), 0600))
 
 	err := linkShared(sharedDir, releaseFile)
 	require.Error(t, err)
@@ -686,7 +687,7 @@ func TestUpdate_ErrExtract(t *testing.T) {
 	dir := t.TempDir()
 	setupDir(t, dir)
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, []byte("valid tar.gz data"), 0644)
+	require.NoError(t, os.WriteFile(pkgPath, []byte("valid tar.gz data"), 0600))
 	// Remove package so extractTarGz fails but verifyIntegrity passes (no .sha256)
 	os.Remove(pkgPath)
 
@@ -706,17 +707,17 @@ exit 0
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
-	assert.NotErrorIs(t, err, ErrNoPackage)
+	require.NotErrorIs(t, err, ErrNoPackage)
 	assert.NotErrorIs(t, err, ErrIntegrity)
 }
 
 func TestCleanupReleases(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(dir, 0755)
+	require.NoError(t, os.MkdirAll(dir, 0755))
 
 	versions := []string{"v1.0.0", "v1.1.0", "v1.2.0", "v1.3.0", "v1.4.0"}
 	for _, v := range versions {
-		os.MkdirAll(filepath.Join(dir, v), 0755)
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, v), 0755))
 	}
 
 	err := cleanupReleases(dir, "v1.4.0", 3)
@@ -731,8 +732,8 @@ func TestCleanupReleases(t *testing.T) {
 
 func TestCleanupReleases_NoneToDelete(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "v1.0.0"), 0755)
-	os.MkdirAll(filepath.Join(dir, "v1.1.0"), 0755)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.0"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.1.0"), 0755))
 
 	err := cleanupReleases(dir, "v1.1.0", 5)
 	require.NoError(t, err)
@@ -742,11 +743,11 @@ func TestCleanupReleases_NoneToDelete(t *testing.T) {
 
 func TestCleanupReleases_NonDirEntry(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(dir, 0755)
-	os.MkdirAll(filepath.Join(dir, "v2.0.0"), 0755)
-	os.MkdirAll(filepath.Join(dir, "v2.0.1"), 0755)
+	require.NoError(t, os.MkdirAll(dir, 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v2.0.0"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v2.0.1"), 0755))
 	// Add a non-directory entry alongside release dirs
-	os.WriteFile(filepath.Join(dir, "README.txt"), []byte("info"), 0644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.txt"), []byte("info"), 0600))
 
 	err := cleanupReleases(dir, "v2.0.1", 3)
 	require.NoError(t, err)
@@ -762,9 +763,9 @@ func TestCleanupReleases_NonExistentDir(t *testing.T) {
 
 func TestCleanupReleases_Boundary(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "v1.0.0"), 0755)
-	os.MkdirAll(filepath.Join(dir, "v1.0.1"), 0755)
-	os.MkdirAll(filepath.Join(dir, "v1.0.2"), 0755)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.0"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.1"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.2"), 0755))
 	err := cleanupReleases(dir, "v1.0.2", 3)
 	require.NoError(t, err)
 	assert.DirExists(t, filepath.Join(dir, "v1.0.0"))
@@ -786,11 +787,12 @@ func TestCompareVersions(t *testing.T) {
 	}
 	for _, tc := range tests {
 		got := compareVersions(tc.a, tc.b)
-		if tc.want < 0 {
-			assert.True(t, got < 0, "expected %s < %s, got %d", tc.a, tc.b, got)
-		} else if tc.want > 0 {
-			assert.True(t, got > 0, "expected %s > %s, got %d", tc.a, tc.b, got)
-		} else {
+		switch {
+		case tc.want < 0:
+			assert.Negative(t, got, "expected %s < %s, got %d", tc.a, tc.b, got)
+		case tc.want > 0:
+			assert.Positive(t, got, "expected %s > %s, got %d", tc.a, tc.b, got)
+		default:
 			assert.Equal(t, 0, got, "expected %s == %s", tc.a, tc.b)
 		}
 	}
@@ -834,7 +836,7 @@ func (m *recorderNginx) EnableSiteFromFile(name string, configPath string) error
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(confPath, data, 0644)
+	return os.WriteFile(confPath, data, 0600)
 }
 
 func (m *recorderNginx) Reload(ctx context.Context) error {
@@ -853,7 +855,7 @@ func TestUpdate_StaticWithNginxConfig(t *testing.T) {
 
 	// Write initial template-generated config
 	initialConfig := "server { listen 8080; server_name old.example.com; root /var/www; }"
-	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(initialConfig), 0644)
+	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(initialConfig), 0600)
 	require.NoError(t, err)
 	err = os.Symlink(filepath.Join(nginxAvailDir, "my-site.conf"), filepath.Join(nginxEnabledDir, "my-site.conf"))
 	require.NoError(t, err)
@@ -865,7 +867,7 @@ func TestUpdate_StaticWithNginxConfig(t *testing.T) {
 		"nginx.conf": newConfig,
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -911,7 +913,7 @@ func TestUpdate_StaticWithoutNginxConfig(t *testing.T) {
 	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", nginxEnabledDir)
 
 	initialConfig := "server { listen 8080; server_name old.example.com; root /var/www; }"
-	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(initialConfig), 0644)
+	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(initialConfig), 0600)
 	require.NoError(t, err)
 	err = os.Symlink(filepath.Join(nginxAvailDir, "my-site.conf"), filepath.Join(nginxEnabledDir, "my-site.conf"))
 	require.NoError(t, err)
@@ -920,7 +922,7 @@ func TestUpdate_StaticWithoutNginxConfig(t *testing.T) {
 		"index.html": "<h1>Hello</h1>",
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -959,17 +961,17 @@ func TestUpdate_StaticWithNginxConfig_RollbackOnSmokeTestFailure(t *testing.T) {
 
 	// Write initial old-style config
 	oldConfig := "server { listen 8080; server_name old.example.com; root /var/www; }"
-	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(oldConfig), 0644)
+	err := os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte(oldConfig), 0600)
 	require.NoError(t, err)
 	err = os.Symlink(filepath.Join(nginxAvailDir, "my-site.conf"), filepath.Join(nginxEnabledDir, "my-site.conf"))
 	require.NoError(t, err)
 
 	// Old release exists (symlink target)
 	oldRelease := filepath.Join(dir, "releases", "v0.9.0")
-	os.MkdirAll(oldRelease, 0755)
-	os.WriteFile(filepath.Join(oldRelease, "index.html"), []byte("old"), 0644)
+	require.NoError(t, os.MkdirAll(oldRelease, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(oldRelease, "index.html"), []byte("old"), 0600))
 	currentSymlink := filepath.Join(dir, "current")
-	os.Symlink(oldRelease, currentSymlink)
+	require.NoError(t, os.Symlink(oldRelease, currentSymlink))
 
 	// New release with nginx.conf - smoke test will fail
 	newConfig := "server { listen 8080; server_name new.example.com; root /var/www/current; }"
@@ -978,7 +980,7 @@ func TestUpdate_StaticWithNginxConfig_RollbackOnSmokeTestFailure(t *testing.T) {
 		"nginx.conf": newConfig,
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -1000,7 +1002,7 @@ exit 1
 	}, ng, nil)
 
 	err = svc.Update(context.Background(), "my-site", "v1.0.0")
-	assert.ErrorIs(t, err, ErrRolledBack)
+	require.ErrorIs(t, err, ErrRolledBack)
 
 	// Verify nginx config was restored to old config
 	data, err := os.ReadFile(filepath.Join(nginxAvailDir, "my-site.conf"))
@@ -1039,7 +1041,7 @@ func TestUpdate_StaticWithNginxConfig_NoExistingConfig(t *testing.T) {
 		"nginx.conf": newConfig,
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -1079,7 +1081,7 @@ func TestUpdate_StaticWithNginxConfig_EnableSiteError(t *testing.T) {
 		"nginx.conf": "config",
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -1112,14 +1114,14 @@ func TestUpdate_StaticWithNginxConfig_ReloadError(t *testing.T) {
 	t.Setenv("VIRGIL_NGINX_ENABLED_DIR", t.TempDir())
 
 	// Existing config so backup is available
-	os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte("old config"), 0644)
+	require.NoError(t, os.WriteFile(filepath.Join(nginxAvailDir, "my-site.conf"), []byte("old config"), 0600))
 
 	tarData := createTarGz(t, map[string]string{
 		"index.html": "<h1>Hello</h1>",
 		"nginx.conf": "new config",
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -1155,7 +1157,7 @@ func TestUpdate_AppTypeWithNginxClientIgnored(t *testing.T) {
 		"package.json":  `{"name":"app"}`,
 	})
 	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
-	os.WriteFile(pkgPath, tarData, 0644)
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
 
 	script := filepath.Join(dir, "smoke.sh")
 	writeScript(t, script, `#!/bin/sh
@@ -1185,19 +1187,19 @@ exit 0
 
 func setupDir(t *testing.T, dir string) {
 	t.Helper()
-	os.MkdirAll(filepath.Join(dir, "releases"), 0755)
-	os.MkdirAll(filepath.Join(dir, "shared"), 0755)
-	os.MkdirAll(filepath.Join(dir, "incoming"), 0755)
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "releases"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "shared"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "incoming"), 0755))
 }
 
 func writeScript(t *testing.T, path, content string) {
 	t.Helper()
-	os.WriteFile(path, []byte(content), 0755)
+	require.NoError(t, os.WriteFile(path, []byte(content), 0755)) //nolint:gosec // G306: test helper writes executable shell scripts; temporary files only.
 
 	abs, err := filepath.Abs(path)
 	require.NoError(t, err)
 
-	cmd := exec.Command("sh", "-c", fmt.Sprintf("command -v %s", abs))
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("command -v %s", abs)) //nolint:gosec // G204: test helper only checks the generated script is executable.
 	if err := cmd.Run(); err != nil {
 		t.Skipf("script not executable with sh: %v", err)
 	}

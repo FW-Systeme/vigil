@@ -35,7 +35,7 @@ func (j Job) Validate() error {
 	return nil
 }
 
-type CronFile struct {
+type File struct {
 	Crons []Job `json:"crons"`
 }
 

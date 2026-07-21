@@ -186,7 +186,7 @@ func TestClient_EnableSiteFromFile(t *testing.T) {
 
 	// Create a custom config file
 	configPath := filepath.Join(t.TempDir(), "my-custom.conf")
-	err := os.WriteFile(configPath, []byte("custom nginx config"), 0644)
+	err := os.WriteFile(configPath, []byte("custom nginx config"), 0600)
 	require.NoError(t, err)
 
 	err = c.EnableSiteFromFile("myapp", configPath)
@@ -216,11 +216,11 @@ func TestClient_EnableSiteFromFile_WriteError(t *testing.T) {
 	// Create a valid config file
 	configDir := t.TempDir()
 	configPath := filepath.Join(configDir, "custom.conf")
-	os.WriteFile(configPath, []byte("config"), 0644)
+	require.NoError(t, os.WriteFile(configPath, []byte("config"), 0600))
 
 	// Use a read-only available dir → WriteFile fails
 	roDir := t.TempDir()
-	os.Chmod(roDir, 0555)
+	require.NoError(t, os.Chmod(roDir, 0555))
 
 	c := &client{}
 	origAvailable := availablePath
@@ -229,7 +229,7 @@ func TestClient_EnableSiteFromFile_WriteError(t *testing.T) {
 
 	err := c.EnableSiteFromFile("myapp", configPath)
 	require.Error(t, err)
-	os.Chmod(roDir, 0755)
+	require.NoError(t, os.Chmod(roDir, 0755))
 }
 
 func TestClient_DisableSite(t *testing.T) {

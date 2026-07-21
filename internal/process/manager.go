@@ -359,7 +359,7 @@ func (m *Manager) buildApp(ctx context.Context, p Process) error {
 	if p.BuildCmd == "" {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, "sh", "-c", p.BuildCmd)
+	cmd := exec.CommandContext(ctx, "sh", "-c", p.BuildCmd) //nolint:gosec // G204: intentional shell command configured by the operator.
 	cmd.Dir = p.WorkingDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

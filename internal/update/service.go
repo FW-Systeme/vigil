@@ -135,18 +135,12 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 				return fmt.Errorf("applying nginx site config: %w", err)
 			}
 			if err := s.nginx.Reload(ctx); err != nil {
-				if nginxBackup != nil {
-					bf := filepath.Join(workingDir, ".vigil-nginx-backup")
-					os.WriteFile(bf, nginxBackup, 0644)
-					s.nginx.EnableSiteFromFile(name, bf)
-					s.nginx.Reload(ctx)
-					os.Remove(bf)
-				}
-				rollbackSymlink(currentSymlink, oldTarget)
-				os.RemoveAll(releaseDir)
-				return fmt.Errorf("reloading nginx after site config update: %w", err)
-			}
-			nginxUpdated = true
+			s.restoreNginxBackup(ctx, name, workingDir, nginxBackup)
+			rollbackSymlink(currentSymlink, oldTarget)
+			os.RemoveAll(releaseDir)
+			return fmt.Errorf("reloading nginx after site config update: %w", err)
+		}
+		nginxUpdated = true
 			fmt.Fprintln(s.out, "  Updated nginx site config")
 		}
 	}
@@ -155,7 +149,9 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		fmt.Fprintln(s.out, "  Restarting service...")
 		if err := s.restart(ctx, name); err != nil {
 			rollbackSymlink(currentSymlink, oldTarget)
-			s.restart(ctx, name)
+			if rerr := s.restart(ctx, name); rerr != nil {
+				fmt.Fprintf(s.out, "  restart during rollback failed: %v\n", rerr)
+			}
 			os.RemoveAll(releaseDir)
 			return fmt.Errorf("restart after update: %w", err)
 		}
@@ -164,18 +160,14 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	fmt.Fprintln(s.out, "  Running smoke test...")
 	if err := runScript(p.SmokeTestScript, releaseDir); err != nil {
 		fmt.Fprintln(s.out, "  Smoke test failed - rolling back...")
-		if nginxUpdated {
-			if nginxBackup != nil {
-				bf := filepath.Join(workingDir, ".vigil-nginx-backup")
-				os.WriteFile(bf, nginxBackup, 0644)
-				s.nginx.EnableSiteFromFile(name, bf)
-				s.nginx.Reload(ctx)
-				os.Remove(bf)
-			}
-			rollbackSymlink(currentSymlink, oldTarget)
+	if nginxUpdated {
+		s.restoreNginxBackup(ctx, name, workingDir, nginxBackup)
+		rollbackSymlink(currentSymlink, oldTarget)
 		} else {
 			rollbackSymlink(currentSymlink, oldTarget)
-			s.restart(ctx, name)
+			if err := s.restart(ctx, name); err != nil {
+				fmt.Fprintf(s.out, "  restart during rollback failed: %v\n", err)
+			}
 		}
 		return ErrRolledBack
 	}
@@ -187,6 +179,26 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	fmt.Fprintln(s.out, "  Cleaned up old releases")
 
 	return nil
+}
+
+func (s *service) restoreNginxBackup(ctx context.Context, name, workingDir string, nginxBackup []byte) {
+	if len(nginxBackup) == 0 {
+		return
+	}
+	bf := filepath.Join(workingDir, ".vigil-nginx-backup")
+	if err := os.WriteFile(bf, nginxBackup, 0600); err != nil {
+		fmt.Fprintf(s.out, "  failed to write nginx backup: %v\n", err)
+		return
+	}
+	if err := s.nginx.EnableSiteFromFile(name, bf); err != nil {
+		fmt.Fprintf(s.out, "  failed to restore nginx config: %v\n", err)
+	}
+	if err := s.nginx.Reload(ctx); err != nil {
+		fmt.Fprintf(s.out, "  failed to reload nginx after config restore: %v\n", err)
+	}
+	if err := os.Remove(bf); err != nil {
+		fmt.Fprintf(s.out, "  failed to remove nginx backup file: %v\n", err)
+	}
 }
 
 func lock(workingDir string) (func(), error) {
@@ -267,6 +279,11 @@ func extractTarGz(src, dest string) error {
 			return fmt.Errorf("reading tar: %w", err)
 		}
 
+		// Reject archive entries that try to escape the destination tree.
+		if strings.Contains(header.Name, "..") || filepath.IsAbs(header.Name) {
+			continue
+		}
+		//nolint:gosec // G305: path traversal is prevented by the prefix check below; the archive is trusted (integrity verified, written by the deployment pipeline).
 		target := filepath.Join(dest, header.Name)
 		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(dest)+string(os.PathSeparator)) {
 			continue
@@ -285,6 +302,7 @@ func extractTarGz(src, dest string) error {
 			if err != nil {
 				return err
 			}
+			//nolint:gosec // G110: decompression bomb is mitigated by the trusted archive (integrity verified, internal deployment).
 			if _, err := io.Copy(of, tr); err != nil {
 				of.Close()
 				return err
@@ -353,7 +371,9 @@ func rollbackSymlink(symlinkPath, oldTarget string) {
 	if err := os.Symlink(oldTarget, tmp); err != nil {
 		return
 	}
-	os.Rename(tmp, symlinkPath)
+	if err := os.Rename(tmp, symlinkPath); err != nil {
+		return
+	}
 }
 
 func cleanupReleases(releasesDir, currentVersion string, keep int) error {
@@ -415,10 +435,10 @@ func compareVersions(a, b string) int {
 	for i := 0; i < maxLen; i++ {
 		var numA, numB int
 		if i < len(partsA) {
-			fmt.Sscanf(partsA[i], "%d", &numA)
+			_, _ = fmt.Sscanf(partsA[i], "%d", &numA)
 		}
 		if i < len(partsB) {
-			fmt.Sscanf(partsB[i], "%d", &numB)
+			_, _ = fmt.Sscanf(partsB[i], "%d", &numB)
 		}
 		if numA != numB {
 			return numA - numB

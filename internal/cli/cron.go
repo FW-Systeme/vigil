@@ -44,7 +44,7 @@ func newCronInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Generate a cronfile.json template",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			tmpl := cron.CronFile{
+			tmpl := cron.File{
 				Crons: []cron.Job{
 					{
 						Name:     "my-job",
