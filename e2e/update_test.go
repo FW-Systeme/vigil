@@ -137,6 +137,7 @@ http.createServer((req, res) => {
 		fmt.Sprintf("--working-dir=%s", workDir),
 		"--smoke-test-script=/bin/true",
 		"--bundled-deps",
+		"--command=/usr/bin/node server.js",
 	)
 	RequireSuccess(t, res, "vigil add for update test")
 	res = RunVigil("start", name)
@@ -213,6 +214,7 @@ http.createServer((req, res) => {
 		fmt.Sprintf("--working-dir=%s", workDir),
 		"--smoke-test-script=/bin/true",
 		"--bundled-deps",
+		"--command=/usr/bin/node server.js",
 	)
 	RequireSuccess(t, res, "vigil add for lock test")
 	res = RunVigil("start", name)

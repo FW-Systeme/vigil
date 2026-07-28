@@ -25,6 +25,7 @@ func newAddCmd() *cobra.Command {
 	var buildCmd string
 	var smokeTestScript string
 	var bundledDeps bool
+	var installCmd string
 
 	cmd := &cobra.Command{
 		Use:   "add [name]",
@@ -63,7 +64,7 @@ Examples:
 				return fmt.Errorf("required flag(s) \"port\" not set")
 			}
 
-			return addSingle(cmd, pm, nameArg, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd, port, force, smokeTestScript, bundledDeps)
+			return addSingle(cmd, pm, nameArg, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd, port, force, smokeTestScript, bundledDeps, installCmd)
 		},
 	}
 
@@ -83,11 +84,12 @@ Examples:
 	flags.StringVar(&buildCmd, "build-cmd", "", "Build command to run before start (e.g. go build -o /opt/app/bin .)")
 	flags.StringVar(&smokeTestScript, "smoke-test-script", "", "Path to smoke test script (activates release management)")
 	flags.BoolVar(&bundledDeps, "bundled-deps", false, "Dependencies are included in the package")
+	flags.StringVar(&installCmd, "install-cmd", "", "Dependency install command (e.g. 'yarn install --frozen-lockfile', 'pip install -r requirements.txt')")
 
 	return cmd
 }
 
-func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd string, port int, force bool, smokeTestScript string, bundledDeps bool) error {
+func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd string, port int, force bool, smokeTestScript string, bundledDeps bool, installCmd string) error {
 	p := process.Process{
 		Name:            name,
 		Type:            process.Type(appType),
@@ -105,6 +107,7 @@ func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, bu
 		Enabled:         true,
 		SmokeTestScript: smokeTestScript,
 		BundledDeps:     bundledDeps,
+		InstallCmd:      installCmd,
 	}
 
 	if err := p.Validate(); err != nil {

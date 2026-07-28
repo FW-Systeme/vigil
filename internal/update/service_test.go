@@ -576,7 +576,7 @@ func TestSwitchSymlink_FailsOnInvalidTarget(t *testing.T) {
 }
 
 func TestInstallDeps_NoPackageJSON(t *testing.T) {
-	err := installDeps(t.TempDir())
+	err := installDeps(t.TempDir(), "npm ci --production --ignore-scripts")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrDepsFailed)
 }
@@ -1309,6 +1309,7 @@ exit 0
 		WorkingDir:      dir,
 		SmokeTestScript: script,
 		BundledDeps:     false,
+		InstallCmd:      "false",
 	}}, func(ctx context.Context, name string) error {
 		return nil
 	}, nil, nil, false)

@@ -19,7 +19,7 @@ func newInitCmd() *cobra.Command {
 		tmpl := process.Process{
 			Name:    "my-app",
 			Type:    process.TypeApp,
-			Entry:   "./app.js",
+			Command: "./my-app",
 			Port:    3000,
 		}
 

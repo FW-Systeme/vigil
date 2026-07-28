@@ -10,7 +10,7 @@ import (
 )
 
 func TestValidate_ValidNode(t *testing.T) {
-	p := Process{Name: "my-app", Type: TypeNode, Port: 3000, Entry: "./app.js", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "my-app", Type: TypeNode, Port: 3000, Entry: "./app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	assert.NoError(t, p.Validate())
 }
 
@@ -50,7 +50,7 @@ func TestValidate_NodeMissingEntry(t *testing.T) {
 }
 
 func TestValidate_AppWithCommandOnly(t *testing.T) {
-	p := Process{Name: "app", Type: TypeApp, Port: 3000, Command: "/opt/app/bin", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "app", Type: TypeApp, Port: 3000, Command: "/opt/app/bin", SmokeTestScript: "/smoke.sh", InstallCmd: "go mod download"}
 	err := p.Validate()
 	require.NoError(t, err)
 }
@@ -72,6 +72,26 @@ func TestIsBackend(t *testing.T) {
 func TestValidate_StaticMissingBuildDir(t *testing.T) {
 	p := Process{Name: "app", Type: TypeStatic, Port: 8080}
 	assert.ErrorContains(t, p.Validate(), "build_dir is required for static apps")
+}
+
+func TestValidate_MissingInstallCmd(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh"}
+	assert.ErrorContains(t, p.Validate(), "install_cmd is required when bundled_deps is false")
+}
+
+func TestValidate_BundledDepsSkipsInstallCmd(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", BundledDeps: true}
+	assert.NoError(t, p.Validate())
+}
+
+func TestValidate_InstallCmdProvided(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install --frozen-lockfile"}
+	assert.NoError(t, p.Validate())
+}
+
+func TestValidate_StaticSkipsInstallCmd(t *testing.T) {
+	p := Process{Name: "site", Type: TypeStatic, Port: 8080, BuildDir: "./dist", SmokeTestScript: "/smoke.sh"}
+	assert.NoError(t, p.Validate())
 }
 
 func TestParseEcosystemFile_SingleApp(t *testing.T) {

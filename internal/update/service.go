@@ -114,7 +114,7 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 
 	if !p.BundledDeps {
 		log.Log("deps.install_start", nil)
-		if err := installDeps(releaseDir); err != nil {
+		if err := installDeps(releaseDir, p.InstallCmd); err != nil {
 			log.Log("deps.install_failed", map[string]any{"error": err.Error()})
 			os.RemoveAll(releaseDir)
 			return err
@@ -349,13 +349,13 @@ func extractTarGz(src, dest string) error {
 	return nil
 }
 
-func installDeps(releaseDir string) error {
-	cmd := exec.Command("npm", "ci", "--production", "--ignore-scripts")
+func installDeps(releaseDir string, installCmd string) error {
+	cmd := exec.Command("sh", "-c", installCmd) //nolint:gosec // G204: intentional shell command configured by the operator.
 	cmd.Dir = releaseDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%w: npm ci: %v", ErrDepsFailed, err)
+		return fmt.Errorf("%w: %s: %v", ErrDepsFailed, installCmd, err)
 	}
 	return nil
 }

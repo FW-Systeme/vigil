@@ -155,7 +155,7 @@ func TestManager_AddProcess_App_Success(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{}}
 	m := New(store, sd, ng)
 
-	p := Process{Name: "my-go-app", Type: TypeApp, Port: 8080, Entry: "server.go", WorkingDir: "/app", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "my-go-app", Type: TypeApp, Port: 8080, Entry: "server.go", WorkingDir: "/app", SmokeTestScript: "/smoke.sh", InstallCmd: "go mod download"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.NoError(t, err)
 	assert.True(t, sd.createCalled, "CreateUnitFile should be called for app type")
@@ -168,7 +168,7 @@ func TestManager_AddProcess_App_WithBuildCmd(t *testing.T) {
 	m := New(store, sd, ng)
 
 	dir := t.TempDir()
-	p := Process{Name: "my-go-app", Type: TypeApp, Port: 8080, Entry: "server.go", WorkingDir: dir, BuildCmd: "true", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "my-go-app", Type: TypeApp, Port: 8080, Entry: "server.go", WorkingDir: dir, BuildCmd: "true", SmokeTestScript: "/smoke.sh", InstallCmd: "go mod download"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.NoError(t, err)
 	assert.True(t, sd.createCalled, "CreateUnitFile should be called")
@@ -181,7 +181,7 @@ func TestManager_AddProcess_App_BuildCmdFails(t *testing.T) {
 	m := New(store, sd, ng)
 
 	dir := t.TempDir()
-	p := Process{Name: "my-go-app", Type: TypeApp, Port: 8080, Entry: "server.go", WorkingDir: dir, BuildCmd: "false", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "my-go-app", Type: TypeApp, Port: 8080, Entry: "server.go", WorkingDir: dir, BuildCmd: "false", SmokeTestScript: "/smoke.sh", InstallCmd: "go mod download"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "build command failed")
@@ -193,7 +193,7 @@ func TestManager_AddProcess_Node_Success(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{}}
 	m := New(store, sd, ng)
 
-	p := Process{Name: "test-app", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "test-app", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.NoError(t, err)
 	assert.True(t, sd.createCalled, "CreateUnitFile should be called")
@@ -230,7 +230,7 @@ func TestManager_AddProcess_Duplicate_NoForce(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{"existing": {Name: "existing"}}}
 	m := New(store, sd, ng)
 
-	p := Process{Name: "existing", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "existing", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
@@ -242,7 +242,7 @@ func TestManager_AddProcess_Duplicate_Force(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{"existing": {Name: "existing"}}}
 	m := New(store, sd, ng)
 
-	p := Process{Name: "existing", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "existing", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, true)
 	require.NoError(t, err)
 }
@@ -263,7 +263,7 @@ func TestManager_AddProcess_NilSystemd(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{}}
 	m := New(store, nil, ng)
 
-	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "systemd client not available")
@@ -447,7 +447,7 @@ func TestUnitContent_WithoutEnvFile(t *testing.T) {
 	content := string(unitContent(p))
 	assert.Contains(t, content, "Description=Vigil: my-app")
 	assert.Contains(t, content, "WorkingDirectory=/app")
-	assert.Contains(t, content, "ExecStart=/usr/bin/node server.js")
+	assert.Contains(t, content, "ExecStart=server.js")
 	assert.NotContains(t, content, "EnvironmentFile")
 }
 
@@ -461,7 +461,7 @@ func TestUnitContent_WithSmokeTestScript(t *testing.T) {
 	p := Process{Name: "my-app", Type: TypeNode, WorkingDir: "/opt/app", Entry: "server.js", EnvFile: "/opt/app/.env", SmokeTestScript: "/opt/app/smoke.sh"}
 	content := string(unitContent(p))
 	assert.Contains(t, content, "WorkingDirectory=/opt/app/current")
-	assert.Contains(t, content, "ExecStart=/usr/bin/node server.js")
+	assert.Contains(t, content, "ExecStart=server.js")
 	assert.Contains(t, content, "EnvironmentFile=/opt/app/shared/.env")
 }
 
@@ -542,7 +542,7 @@ func TestManager_Status_StaticNilNginx(t *testing.T) {
 func TestManager_AddProcess_StoreSaveError(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{}, err: fmt.Errorf("save failed")}
 	m := New(store, &mockSystemd{}, &mockNginx{})
-	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.Error(t, err)
 }
@@ -551,7 +551,7 @@ func TestManager_AddProcess_SystemdCreateError(t *testing.T) {
 	sd := &mockSystemd{err: fmt.Errorf("create failed")}
 	store := &mockStore{processes: map[string]Process{}}
 	m := New(store, sd, &mockNginx{})
-	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.Error(t, err)
 }
@@ -644,7 +644,7 @@ func TestManager_AddProcess_NodeNilWorkingDir(t *testing.T) {
 	sd := &mockSystemd{}
 	store := &mockStore{processes: map[string]Process{}}
 	m := New(store, sd, &mockNginx{})
-	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.NoError(t, err)
 	assert.True(t, sd.createCalled)
@@ -750,7 +750,7 @@ func TestManager_AddProcess_SystemdCreateErrorWithNilNginx(t *testing.T) {
 	sd := &mockSystemd{err: fmt.Errorf("create failed")}
 	store := &mockStore{processes: map[string]Process{}}
 	m := New(store, sd, nil)
-	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh"}
+	p := Process{Name: "test", Type: TypeNode, Port: 3000, Entry: "app.js", WorkingDir: "/app", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install"}
 	err := m.AddProcess(context.Background(), p, false)
 	require.Error(t, err)
 }

@@ -373,7 +373,7 @@ func unitContent(p Process) []byte {
 	workingDir := p.WorkingDir
 	execStart := p.Command
 	if execStart == "" {
-		execStart = "/usr/bin/node " + p.Entry
+		execStart = p.Entry
 	}
 
 	if p.SmokeTestScript != "" {

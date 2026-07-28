@@ -32,6 +32,7 @@ type Process struct {
 	Enabled         bool      `json:"enabled"`
 	SmokeTestScript string    `json:"smoke_test_script,omitempty"`
 	BundledDeps     bool      `json:"bundled_deps,omitempty"`
+	InstallCmd      string    `json:"install_cmd,omitempty"`
 }
 
 func (p Process) Validate() error {
@@ -52,6 +53,9 @@ func (p Process) Validate() error {
 	}
 	if p.SmokeTestScript == "" {
 		return fmt.Errorf("smoke_test_script is required")
+	}
+	if !p.BundledDeps && p.InstallCmd == "" && p.IsBackend() {
+		return fmt.Errorf("install_cmd is required when bundled_deps is false")
 	}
 	return nil
 }
