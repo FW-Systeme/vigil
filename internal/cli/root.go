@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/FW-Systeme/Virgil/internal/nginx"
 	"github.com/FW-Systeme/Virgil/internal/process"
@@ -13,6 +14,33 @@ var version = "dev"
 
 func SetVersion(v string) {
 	version = v
+}
+
+// needsSystemd reports whether cmd requires a systemd D-Bus connection.
+// Commands that only touch the store, crontab, or local files return false.
+func needsSystemd(cmd *cobra.Command) bool {
+	path := cmd.CommandPath()
+	switch {
+	case path == "vigil":
+		return false
+	case path == "vigil list":
+		return false
+	case path == "vigil init":
+		return false
+	case path == "vigil version":
+		return false
+	case strings.HasPrefix(path, "vigil cron"):
+		return false
+	case path == "vigil logsave status":
+		return false
+	default:
+		return true
+	}
+}
+
+func isHelpOrVersion(cmd *cobra.Command) bool {
+	path := cmd.CommandPath()
+	return path == "vigil" || path == "vigil version"
 }
 
 func NewRootCmd() *cobra.Command {
@@ -27,8 +55,17 @@ func NewRootCmd() *cobra.Command {
 			}
 
 			var sdClient systemd.Client
+			var sdErr error
 			if c, err := systemd.New(); err == nil {
 				sdClient = c
+			} else {
+				sdErr = err
+			}
+
+			if sdClient == nil && needsSystemd(cmd) {
+				return fmt.Errorf("systemd unavailable (try running with sudo): %w", sdErr)
+			} else if sdErr != nil && !isHelpOrVersion(cmd) {
+				fmt.Fprintf(cmd.ErrOrStderr(), "Warning: systemd unavailable: %v\n", sdErr)
 			}
 
 			var nginxClient nginx.Client

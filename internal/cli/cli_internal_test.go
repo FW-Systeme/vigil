@@ -136,6 +136,84 @@ func executeWithPM(t *testing.T, pm *process.Manager, args []string) (string, er
 	return buf.String(), err
 }
 
+func TestIsHelpOrVersion(t *testing.T) {
+	root := &cobra.Command{Use: "vigil"}
+	list := &cobra.Command{Use: "list"}
+	versionCmd := &cobra.Command{Use: "version"}
+	cron := &cobra.Command{Use: "cron"}
+	cronAdd := &cobra.Command{Use: "add"}
+	start := &cobra.Command{Use: "start"}
+
+	root.AddCommand(list, versionCmd, cron, start)
+	cron.AddCommand(cronAdd)
+
+	tests := []struct {
+		cmd  *cobra.Command
+		want bool
+	}{
+		{root, true},
+		{versionCmd, true},
+		{list, false},
+		{cron, false},
+		{cronAdd, false},
+		{start, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.cmd.CommandPath(), func(t *testing.T) {
+			assert.Equal(t, tt.want, isHelpOrVersion(tt.cmd))
+		})
+	}
+}
+
+func TestNeedsSystemd(t *testing.T) {
+	root := &cobra.Command{Use: "vigil"}
+	list := &cobra.Command{Use: "list"}
+	initCmd := &cobra.Command{Use: "init"}
+	versionCmd := &cobra.Command{Use: "version"}
+	cron := &cobra.Command{Use: "cron"}
+	cronAdd := &cobra.Command{Use: "add"}
+	add := &cobra.Command{Use: "add"}
+	start := &cobra.Command{Use: "start"}
+	stop := &cobra.Command{Use: "stop"}
+	restart := &cobra.Command{Use: "restart"}
+	remove := &cobra.Command{Use: "remove"}
+	logs := &cobra.Command{Use: "logs"}
+	update := &cobra.Command{Use: "update"}
+	logsave := &cobra.Command{Use: "logsave"}
+	logsaveEnable := &cobra.Command{Use: "enable"}
+	logsaveStatus := &cobra.Command{Use: "status"}
+
+	root.AddCommand(list, initCmd, versionCmd, cron, add, start, stop, restart, remove, logs, update, logsave)
+	cron.AddCommand(cronAdd)
+	logsave.AddCommand(logsaveEnable, logsaveStatus)
+
+	tests := []struct {
+		cmd  *cobra.Command
+		want bool
+	}{
+		{root, false},
+		{list, false},
+		{initCmd, false},
+		{versionCmd, false},
+		{cron, false},
+		{cronAdd, false},
+		{add, true},
+		{start, true},
+		{stop, true},
+		{restart, true},
+		{remove, true},
+		{logs, true},
+		{update, true},
+		{logsaveEnable, true},
+		{logsaveStatus, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.cmd.CommandPath(), func(t *testing.T) {
+			assert.Equal(t, tt.want, needsSystemd(tt.cmd))
+		})
+	}
+}
+
 func TestExecute(t *testing.T) {
 	SetVersion("test")
 	err := Execute()
