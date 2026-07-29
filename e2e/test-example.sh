@@ -100,7 +100,7 @@ test_example_app_lifecycle() {
             --command "$NODE_BIN $EXAMPLE_DIR/app/server.js" \
             --port "$port" \
             --working-dir "$EXAMPLE_DIR/app" \
-            --smoke-test-script "$EXAMPLE_DIR/app/smoke.sh" \
+            --smoke-test-script "$EXAMPLE_DIR/smoke-pass.sh" \
             --bundled-deps
 
         vigil start "$name"
@@ -144,7 +144,7 @@ test_example_static_lifecycle() {
             --port "$port" \
             --nginx-domain "test.local" \
             --nginx-path "$EXAMPLE_DIR/static" \
-            --smoke-test-script "$EXAMPLE_DIR/static/smoke.sh"
+            --smoke-test-script "$EXAMPLE_DIR/smoke-pass.sh"
 
         vigil start "$name"
         sleep 1
@@ -191,7 +191,7 @@ test_example_ecosystem_bulk() {
       "command": "$NODE_BIN $EXAMPLE_DIR/app/server.js",
       "port": $app_port,
       "working_dir": "$EXAMPLE_DIR/app",
-      "smoke_test_script": "$EXAMPLE_DIR/app/smoke.sh",
+      "smoke_test_script": "$EXAMPLE_DIR/smoke-pass.sh",
       "bundled_deps": true
     },
     {
@@ -201,7 +201,7 @@ test_example_ecosystem_bulk() {
       "port": $static_port,
       "nginx_domain": "test.local",
       "nginx_path": "$EXAMPLE_DIR/static",
-      "smoke_test_script": "$EXAMPLE_DIR/static/smoke.sh"
+      "smoke_test_script": "$EXAMPLE_DIR/smoke-pass.sh"
     }
   ]
 }
@@ -238,7 +238,7 @@ test_example_app_logs() {
             --command "$NODE_BIN $EXAMPLE_DIR/app/server.js" \
             --port "$port" \
             --working-dir "$EXAMPLE_DIR/app" \
-            --smoke-test-script "$EXAMPLE_DIR/app/smoke.sh" \
+            --smoke-test-script "$EXAMPLE_DIR/smoke-pass.sh" \
             --bundled-deps
 
         vigil start "$name"
@@ -279,7 +279,7 @@ test_example_static_logs() {
             --port "$port" \
             --nginx-domain "test.local" \
             --nginx-path "$EXAMPLE_DIR/static" \
-            --smoke-test-script "$EXAMPLE_DIR/static/smoke.sh"
+            --smoke-test-script "$EXAMPLE_DIR/smoke-pass.sh"
 
         vigil start "$name"
         sleep 1
@@ -317,7 +317,7 @@ test_example_error_duplicate() {
             --command "$NODE_BIN $EXAMPLE_DIR/app/server.js" \
             --port "$port" \
             --working-dir "$EXAMPLE_DIR/app" \
-            --smoke-test-script "$EXAMPLE_DIR/app/smoke.sh" \
+            --smoke-test-script "$EXAMPLE_DIR/smoke-pass.sh" \
             --bundled-deps
 
         out=$(vigil add "$name" \
@@ -325,7 +325,7 @@ test_example_error_duplicate() {
             --command "$NODE_BIN $EXAMPLE_DIR/app/server.js" \
             --port "$port" \
             --working-dir "$EXAMPLE_DIR/app" \
-            --smoke-test-script "$EXAMPLE_DIR/app/smoke.sh" \
+            --smoke-test-script "$EXAMPLE_DIR/smoke-pass.sh" \
             --bundled-deps 2>&1 || true)
 
         echo "$out" | grep -qi "already exists"

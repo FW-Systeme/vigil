@@ -22,10 +22,10 @@ func TestAddStaticSite(t *testing.T) {
 	res := RunVigil("add", name,
 		"--type=static",
 		fmt.Sprintf("--port=%d", port),
-		fmt.Sprintf("--build-dir=%s/nginx-site", FixturesDir),
+		fmt.Sprintf("--build-dir=%s/example-project/static", FixturesDir),
 		"--nginx-domain=test.local",
-		fmt.Sprintf("--nginx-path=%s/nginx-site", FixturesDir),
-		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--nginx-path=%s/example-project/static", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/example-project/smoke-pass.sh", FixturesDir),
 	)
 	RequireSuccess(t, res, "vigil add static")
 	assert.Contains(t, res.Stdout, "Registered app")
@@ -91,10 +91,10 @@ func addStaticSite(t *testing.T, name string, port int) {
 	res := RunVigil("add", name,
 		"--type=static",
 		fmt.Sprintf("--port=%d", port),
-		fmt.Sprintf("--build-dir=%s/nginx-site", FixturesDir),
+		fmt.Sprintf("--build-dir=%s/example-project/static", FixturesDir),
 		"--nginx-domain=test.local",
-		fmt.Sprintf("--nginx-path=%s/nginx-site", FixturesDir),
-		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--nginx-path=%s/example-project/static", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/example-project/smoke-pass.sh", FixturesDir),
 	)
 	RequireSuccess(t, res, "vigil add static")
 

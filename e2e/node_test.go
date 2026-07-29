@@ -19,17 +19,17 @@ func TestAddNodeApp(t *testing.T) {
 	port := 3091
 	cleanupDefer(t, name)
 
-	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	fixtureEnvDir := filepath.Join(FixturesDir, "example-project", "app", "shared")
 	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
 	envFile := filepath.Join(fixtureEnvDir, ".env")
 	require.NoError(t, os.WriteFile(envFile, []byte(fmt.Sprintf("PORT=%d\n", port)), 0644))
 
 	res := RunVigil("add", name,
 		"--type=app",
-		fmt.Sprintf("--command=%s %s/server.js", NodeBin, FixturesDir+"/dummy-app"),
+		fmt.Sprintf("--command=%s %s/server.js", NodeBin, filepath.Join(FixturesDir, "example-project", "app")),
 		fmt.Sprintf("--port=%d", port),
-		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
-		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--working-dir=%s/example-project/app", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/example-project/smoke-pass.sh", FixturesDir),
 		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add node")
@@ -38,7 +38,7 @@ func TestAddNodeApp(t *testing.T) {
 	assert.True(t, FileExists(AppStoreFile(name)), "store file should exist")
 	unitFile := filepath.Join("/etc/systemd/system", name+".service")
 	assert.True(t, FileExists(unitFile), "unit file should exist")
-	UnitFileContains(t, name, fmt.Sprintf("WorkingDirectory=%s/dummy-app", FixturesDir))
+	UnitFileContains(t, name, fmt.Sprintf("WorkingDirectory=%s/example-project/app", FixturesDir))
 
 	res = RunVigil("start", name)
 	RequireSuccess(t, res, "vigil start node")
@@ -168,10 +168,10 @@ func TestNodeAppWithBuildCommand(t *testing.T) {
 
 	res := RunVigil("add", name,
 		"--type=app",
-		fmt.Sprintf("--command=%s %s/dummy-app/server.js", NodeBin, FixturesDir),
+		fmt.Sprintf("--command=%s %s/example-project/app/server.js", NodeBin, FixturesDir),
 		fmt.Sprintf("--port=%d", port),
-		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
-		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--working-dir=%s/example-project/app", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/example-project/smoke-pass.sh", FixturesDir),
 		fmt.Sprintf("--build-cmd=touch %s", markerFile),
 	)
 	RequireSuccess(t, res, "vigil add with build-cmd")
@@ -186,18 +186,18 @@ func TestNodeAppWithCustomCommand(t *testing.T) {
 	port := 3099
 	cleanupDefer(t, name)
 
-	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	fixtureEnvDir := filepath.Join(FixturesDir, "example-project", "app", "shared")
 	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
 	envFile := filepath.Join(fixtureEnvDir, ".env")
 	require.NoError(t, os.WriteFile(envFile, []byte(fmt.Sprintf("PORT=%d\n", port)), 0644))
 
-	cmdStr := fmt.Sprintf("%s %s/dummy-app/server.js", NodeBin, FixturesDir)
+	cmdStr := fmt.Sprintf("%s %s/example-project/app/server.js", NodeBin, FixturesDir)
 	res := RunVigil("add", name,
 		"--type=app",
 		fmt.Sprintf("--port=%d", port),
 		fmt.Sprintf("--command=%s", cmdStr),
-		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
-		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--working-dir=%s/example-project/app", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/example-project/smoke-pass.sh", FixturesDir),
 		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add with custom command")
@@ -216,17 +216,17 @@ func TestNodeAppWithEnvFile(t *testing.T) {
 	cleanupDefer(t, name)
 
 	// vigil overrides explicit --env-file to <WorkingDir>/shared/.env when smoke test is active
-	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	fixtureEnvDir := filepath.Join(FixturesDir, "example-project", "app", "shared")
 	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
 	envFile := filepath.Join(fixtureEnvDir, ".env")
 	require.NoError(t, os.WriteFile(envFile, []byte("PORT=3100\n"), 0644))
 
 	res := RunVigil("add", name,
 		"--type=app",
-		fmt.Sprintf("--command=%s %s/dummy-app/server.js", NodeBin, FixturesDir),
+		fmt.Sprintf("--command=%s %s/example-project/app/server.js", NodeBin, FixturesDir),
 		fmt.Sprintf("--port=%d", port),
-		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
-		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--working-dir=%s/example-project/app", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/example-project/smoke-pass.sh", FixturesDir),
 		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add with env-file")
@@ -240,9 +240,9 @@ func TestAddWithoutSmokeScript(t *testing.T) {
 
 	res := RunVigil("add", name,
 		"--type=app",
-		fmt.Sprintf("--command=%s %s/dummy-app/server.js", NodeBin, FixturesDir),
+		fmt.Sprintf("--command=%s %s/example-project/app/server.js", NodeBin, FixturesDir),
 		fmt.Sprintf("--port=%d", port),
-		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
+		fmt.Sprintf("--working-dir=%s/example-project/app", FixturesDir),
 	)
 	RequireError(t, res, "add without smoke script")
 	assert.Contains(t, res.Stderr, "smoke_test_script")
@@ -251,17 +251,17 @@ func TestAddWithoutSmokeScript(t *testing.T) {
 func addNodeApp(t *testing.T, name string, port int) {
 	t.Helper()
 	// write env file so node app listens on the correct port
-	fixtureEnvDir := filepath.Join(FixturesDir, "dummy-app", "shared")
+	fixtureEnvDir := filepath.Join(FixturesDir, "example-project", "app", "shared")
 	require.NoError(t, os.MkdirAll(fixtureEnvDir, 0755))
 	envFile := filepath.Join(fixtureEnvDir, ".env")
 	require.NoError(t, os.WriteFile(envFile, []byte(fmt.Sprintf("PORT=%d\n", port)), 0644))
 
 	res := RunVigil("add", name,
 		"--type=app",
-		fmt.Sprintf("--command=%s %s/dummy-app/server.js", NodeBin, FixturesDir),
+		fmt.Sprintf("--command=%s %s/example-project/app/server.js", NodeBin, FixturesDir),
 		fmt.Sprintf("--port=%d", port),
-		fmt.Sprintf("--working-dir=%s/dummy-app", FixturesDir),
-		fmt.Sprintf("--smoke-test-script=%s/smoke-pass.sh", FixturesDir),
+		fmt.Sprintf("--working-dir=%s/example-project/app", FixturesDir),
+		fmt.Sprintf("--smoke-test-script=%s/example-project/smoke-pass.sh", FixturesDir),
 		fmt.Sprintf("--env-file=%s", "/tmp/placeholder"),
 	)
 	RequireSuccess(t, res, "vigil add node")

@@ -1,24 +1,14 @@
 {
   "apps": [
     {
-      "name": "example-app",
-      "type": "app",
+      "name": "dummy-app",
+      "type": "node",
       "entry": "server.js",
-      "command": "/usr/bin/node /ABSOLUTER/PFAD/e2e/fixtures/example-project/app/server.js",
+      "command": "/usr/bin/node server.js",
       "port": 3000,
-      "working_dir": "/ABSOLUTER/PFAD/e2e/fixtures/example-project/app",
-      "smoke_test_script": "/ABSOLUTER/PFAD/e2e/fixtures/example-project/app/smoke.sh",
-      "env_file": "/ABSOLUTER/PFAD/e2e/fixtures/example-project/app/shared/.env",
+      "working_dir": "/e2e/fixtures/example-project/app",
+      "smoke_test_script": "/e2e/fixtures/example-project/smoke-pass.sh",
       "bundled_deps": true
-    },
-    {
-      "name": "example-site",
-      "type": "static",
-      "build_dir": "/ABSOLUTER/PFAD/e2e/fixtures/example-project/static",
-      "port": 8080,
-      "nginx_domain": "test.local",
-      "nginx_path": "/ABSOLUTER/PFAD/e2e/fixtures/example-project/static",
-      "smoke_test_script": "/ABSOLUTER/PFAD/e2e/fixtures/example-project/static/smoke.sh"
     }
   ]
 }

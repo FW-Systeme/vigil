@@ -18,7 +18,7 @@ e2e-run: build
 	@echo "Starting nginx..."
 	-docker exec vigil-e2e-run nginx 2>/dev/null || true
 	@echo "Creating temp dirs and fixture setup..."
-	docker exec vigil-e2e-run bash -c "mkdir -p /tmp/vigil-e2e-home /tmp/vigil-e2e-logrotate && ln -sfn . /src/e2e/fixtures/dummy-app/current && mkdir -p /src/e2e/fixtures/dummy-app/shared"
+	docker exec vigil-e2e-run bash -c "mkdir -p /tmp/vigil-e2e-home /tmp/vigil-e2e-logrotate && ln -sfn . /src/e2e/fixtures/example-project/app/current && mkdir -p /src/e2e/fixtures/example-project/app/shared"
 	@echo "Running e2e tests inside container..."
 	-docker exec \
 		-e VIRGIL_E2E_FIXTURES=/src/e2e/fixtures \
