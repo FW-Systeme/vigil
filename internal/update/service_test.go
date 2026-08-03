@@ -102,7 +102,7 @@ func TestUpdate_CreatesMissingWorkingDir(t *testing.T) {
 	}}
 	svc := NewService(store, nil, nil, nil, false)
 	err := svc.Update(context.Background(), "app", "")
-	assert.ErrorIs(t, err, ErrNoPackage)
+	require.ErrorIs(t, err, ErrNoPackage)
 
 	for _, d := range []string{
 		workingDir,
