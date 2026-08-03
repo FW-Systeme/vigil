@@ -1,0 +1,6 @@
+.git
+vigil
+coverage.out
+*.out
+.doc
+e2e/logs

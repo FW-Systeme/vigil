@@ -1,0 +1,12 @@
+[Unit]
+Description=Virgil e2e test suite
+After=dbus.service nginx.service cron.service
+
+[Service]
+Type=oneshot
+ExecStart=/e2e/run.sh
+TimeoutStartSec=900
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
