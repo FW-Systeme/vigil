@@ -46,6 +46,12 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	sharedDir := filepath.Join(workingDir, "shared")
 	currentSymlink := filepath.Join(workingDir, "current")
 
+	for _, d := range []string{workingDir, releasesDir, sharedDir, incomingDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			return fmt.Errorf("creating dir %s: %w", d, err)
+		}
+	}
+
 	unlock, err := lock(workingDir)
 	if err != nil {
 		return err
@@ -69,13 +75,6 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	defer func() {
 		log.Log("lock.released", nil)
 	}()
-
-	for _, d := range []string{releasesDir, sharedDir, incomingDir} {
-		if err := os.MkdirAll(d, 0755); err != nil {
-			log.Log("update.failed", map[string]any{"error": err.Error(), "step": "mkdir"})
-			return fmt.Errorf("creating dir %s: %w", d, err)
-		}
-	}
 
 	if version == "" {
 		version, err = findVersion(incomingDir)

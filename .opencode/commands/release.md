@@ -1,7 +1,7 @@
 ---
 description: >
   Erzeugt ein neues Release im Virgil-Go-Projekt.
-  Inkrementiert die Version (SemVer), prüft Qualität lokal, taggt und pusht.
+  Prüft Qualität lokal (Tests, Coverage, Lint), inkrementiert Version (SemVer), taggt und pusht.
   CI baut darauf das Binary und erstellt ein GitHub Release.
 agent: build
 ---
@@ -17,32 +17,9 @@ Erwartet wird: `major`, `minor`, `patch` oder eine explizite Version wie `v1.2.3
 
 ## Workflow
 
-### Phase 1: Aktuelle Version ermitteln
+### Phase 1: Qualität prüfen
 
-```bash
-LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-```
-
-Parst den aktuellen Tag in `$MAJOR`, `$MINOR`, `$PATCH`.
-
-### Phase 2: Neue Version bestimmen
-
-- `major` → MAJOR+1, MINOR=0, PATCH=0
-- `minor` → MINOR+1, PATCH=0
-- `patch` → PATCH+1
-- `vX.Y.Z` → direkt übernehmen (muss höher als aktuell sein)
-
-Neue Version = `v$MAJOR.$MINOR.$PATCH`
-
-### Phase 3: User bestätigen lassen
-
-Nutze das `question`-Tool, um den User die neue Version bestätigen zu lassen.
-
-**Falls User ablehnt**: Abbruch mit Hinweis.
-
-### Phase 4: Qualität prüfen
-
-Führe aus (wie quality-ensurance Agent):
+Führe Qualitätsgates aus. **Bei Fehlern sofort abbrechen** – User muss manuell korrigieren.
 
 1. `golangci-lint run ./...` → Exit-Code 0 erforderlich
 2. `go test -race -count=1 ./...` → alle Tests grün
@@ -56,7 +33,28 @@ Führe aus (wie quality-ensurance Agent):
    ```
 4. `go vet ./...`
 
-**Bei Fehlern**: Abbruch mit Hinweis auf die fehlgeschlagene Phase. User muss manuell korrigieren.
+### Phase 2: Aktuelle Version ermitteln
+
+```bash
+LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+```
+
+Parst den aktuellen Tag in `$MAJOR`, `$MINOR`, `$PATCH`.
+
+### Phase 3: Neue Version bestimmen
+
+- `major` → MAJOR+1, MINOR=0, PATCH=0
+- `minor` → MINOR+1, PATCH=0
+- `patch` → PATCH+1
+- `vX.Y.Z` → direkt übernehmen (muss höher als aktuell sein)
+
+Neue Version = `v$MAJOR.$MINOR.$PATCH`
+
+### Phase 4: User bestätigen lassen
+
+Nutze das `question`-Tool, um den User die neue Version bestätigen zu lassen.
+
+**Falls User ablehnt**: Abbruch mit Hinweis.
 
 ### Phase 5: Tag erstellen
 
@@ -70,19 +68,10 @@ git tag -a "$NEW_VERSION" -m "Release $NEW_VERSION"
 git push origin main --tags
 ```
 
-### Phase 7: CI-Status verfolgen
+### Phase 7: Ergebnis melden
 
-Nutze GitHub MCP, um den CI-Workflow zu beobachten:
+Push erfolgreich. CI baut Binaries und erstellt GitHub Release automatisch.
 
-1. Warte 10s nach Push
-2. Rufe Workflow-Runs auf: Branch = `main`, Event = `push`
-3. Filter auf den aktuellen Workflow-Run (erkennbar an der Tag-Referenz)
-4. Poll alle 30s bis `status = "completed"`
-5. Prüfe `conclusion`: `"success"` oder `"failure"`
-
-### Phase 8: Ergebnis melden
-
-- **success** → Meldung an User: Release `$NEW_VERSION` erfolgreich
-  - Binary in GitHub Release verfügbar
-  - Release-URL anzeigen
-- **failure** → User informieren + Link zu den CI-Logs
+- Release `$NEW_VERSION`
+- CI-Workflow läuft auf `main` mit Tag `$NEW_VERSION`
+- Binary-Download und Release-Notes nach CI-Durchlauf auf GitHub verfügbar

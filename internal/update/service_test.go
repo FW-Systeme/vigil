@@ -92,6 +92,33 @@ func TestUpdate_ErrNoPackage(t *testing.T) {
 	assert.ErrorIs(t, err, ErrNoPackage)
 }
 
+func TestUpdate_CreatesMissingWorkingDir(t *testing.T) {
+	workingDir := filepath.Join(t.TempDir(), "nested", "app")
+
+	store := &mockStore{p: process.Process{
+		Name:            "app",
+		WorkingDir:      workingDir,
+		SmokeTestScript: "/nonexistent/smoke.sh",
+	}}
+	svc := NewService(store, nil, nil, nil, false)
+	err := svc.Update(context.Background(), "app", "")
+	assert.ErrorIs(t, err, ErrNoPackage)
+
+	for _, d := range []string{
+		workingDir,
+		filepath.Join(workingDir, "releases"),
+		filepath.Join(workingDir, "shared"),
+		filepath.Join(workingDir, "incoming"),
+	} {
+		info, statErr := os.Stat(d)
+		require.NoError(t, statErr, "expected dir %s to exist", d)
+		assert.True(t, info.IsDir(), "expected %s to be a directory", d)
+	}
+
+	_, lockErr := os.Stat(filepath.Join(workingDir, ".vigil.lock"))
+	assert.Error(t, lockErr, "lock file must be removed after update")
+}
+
 func TestUpdate_ErrIntegrity(t *testing.T) {
 	dir := t.TempDir()
 	incomingDir := filepath.Join(dir, "incoming")

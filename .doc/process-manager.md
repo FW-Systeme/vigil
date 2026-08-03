@@ -2,7 +2,7 @@
 
 ## Beschreibung
 
-Vigil ist ein leichtgewichtiger CLI-Prozessmanager (PM2-Alternative). Verwaltet Node.js- und Static-Apps via systemd (Node) und nginx (Static). Bietet API zum Hinzufuegen, Entfernen, Starten, Stoppen, Neustarten und Auflisten von Apps.
+Vigil ist ein leichtgewichtiger CLI-Prozessmanager (PM2-Alternative). Verwaltet Node.js-, Go-, Python- und Static-Apps via systemd (Backend) und nginx (Static). Bietet API zum Hinzufuegen, Entfernen, Starten, Stoppen, Neustarten und Auflisten von Apps.
 
 ## Architektur
 
@@ -30,21 +30,28 @@ cmd/vigil/main.go
 ```go
 // process/contract.go
 type Type string
+const TypeApp    Type = "app"
 const TypeNode   Type = "node"
 const TypeStatic Type = "static"
 
 type Process struct {
-    Name        string    `json:"name"`
-    Type        Type      `json:"type"`
-    Port        int       `json:"port"`
-    Entry       string    `json:"entry,omitempty"`     // Node: Einstiegsskript
-    BuildDir    string    `json:"build_dir,omitempty"`  // Static: Build-Ordner
-    EnvFile     string    `json:"env_file,omitempty"`
-    WorkingDir  string    `json:"working_dir,omitempty"`
-    NginxDomain string    `json:"nginx_domain,omitempty"`
-    NginxPath   string    `json:"nginx_path,omitempty"`
-    CreatedAt   time.Time `json:"created_at"`
-    Enabled     bool      `json:"enabled"`
+    Name            string    `json:"name"`
+    Type            Type      `json:"type"`
+    Port            int       `json:"port"`
+    Entry           string    `json:"entry,omitempty"`
+    BuildDir        string    `json:"build_dir,omitempty"`
+    EnvFile         string    `json:"env_file,omitempty"`
+    WorkingDir      string    `json:"working_dir,omitempty"`
+    NginxDomain     string    `json:"nginx_domain,omitempty"`
+    NginxPath       string    `json:"nginx_path,omitempty"`
+    NginxConfig     string    `json:"nginx_config,omitempty"`
+    Command         string    `json:"command,omitempty"`
+    BuildCmd        string    `json:"build_cmd,omitempty"`
+    CreatedAt       time.Time `json:"created_at"`
+    Enabled         bool      `json:"enabled"`
+    SmokeTestScript string    `json:"smoke_test_script,omitempty"`
+    BundledDeps     bool      `json:"bundled_deps,omitempty"`
+    InstallCmd      string    `json:"install_cmd,omitempty"`
 }
 
 type Store interface {
@@ -105,18 +112,23 @@ Close() error
 
 ```go
 EnableSite(name string, port int, domain, root string) error
+EnableSiteFromFile(name string, configPath string) error
 DisableSite(name string) error
 RemoveSiteConfig(name string) error
 SiteEnabled(name string) (bool, error)
-Reload(ctx) error
+Reload(ctx context.Context) error
 Close() error
+LogFile(name string) string
+Logs(ctx context.Context, name string, lines int, follow bool) (io.ReadCloser, error)
+SetupLogging(name string, logPath string, maxSize string, rotate int) error
+RemoveLogging(name string) error
 ```
 
 ### CLI-Befehle
 
 | Befehl | Args | Flags | Beschreibung |
 |---|---|---|---|
-| `vigil add [name]` | optional name | `--type` (node\|static), `--port`, `--entry`, `--build-dir`, `--config` (ecosystem.json), `--force` | App registrieren |
+| `vigil add [name]` | optional name | `--type` (app\|node\|static), `--port`, `--entry`, `--command`, `--build-cmd`, `--build-dir`, `--working-dir`, `--env-file`, `--nginx-domain`, `--nginx-path`, `--nginx-config`, `--smoke-test-script` (required), `--install-cmd`, `--bundled-deps`, `--config` (ecosystem.json), `--force` | App registrieren |
 | `vigil remove <name>` | name (exakt 1) | — | App entfernen |
 | `vigil list` | — | — | Alle Apps auflisten |
 | `vigil start <name>` | name (exakt 1) | — | App starten |
@@ -136,7 +148,7 @@ Close() error
 
 Jeder Process wird als `<name>.json` gespeichert. Atomare Writes via `os.CreateTemp` + `os.Rename`.
 
-### systemd-Unit-Template (Node-Type)
+### systemd-Unit-Template (App/Node-Type)
 
 ```
 [Unit]
@@ -146,7 +158,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=<WorkingDir>
-ExecStart=/usr/bin/node <Entry>
+ExecStart=<Command oder /usr/bin/node <Entry>>
 Restart=on-failure
 RestartSec=5
 EnvironmentFile=<EnvFile>   // nur wenn gesetzt

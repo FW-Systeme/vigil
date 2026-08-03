@@ -45,9 +45,9 @@ func (l *Logger) Log(event string, fields map[string]any)
 | `extract.start` | `version` | Extraktion beginnt |
 | `extract.done` | `version` | Extraktion beendet |
 | `extract.failed` | `error` | Extraktion fehlgeschlagen |
-| `deps.install_start` | — | npm ci start |
-| `deps.install_done` | — | npm ci beendet |
-| `deps.install_failed` | `error` | npm ci Fehler |
+| `deps.install_start` | — | install_cmd start |
+| `deps.install_done` | — | install_cmd beendet |
+| `deps.install_failed` | `error` | install_cmd Fehler |
 | `deps.skip` | `reason=bundled` | Keine Dep-Installation |
 | `shared.link_start` | — | Shared-Daten verlinken |
 | `shared.link_done` | — | Shared-Daten verlinkt |
@@ -100,7 +100,7 @@ Rueckgabe-Sentinels:
 - `ErrNoPackage` — kein .tar.gz in incoming/
 - `ErrIntegrity` — SHA256-Mismatch
 - `ErrSmokeTest` — Smoke-Test fehlgeschlagen
-- `ErrDepsFailed` — npm ci fehlgeschlagen
+- `ErrDepsFailed` — install_cmd fehlgeschlagen
 - `ErrRolledBack` — Update fehlgeschlagen, erfolgreich zurueckgerollt
 
 ## CLI
@@ -122,7 +122,7 @@ Bei `--log-output` wird der Logger als Dual-Writer konfiguriert: stdout (sofern 
 3. **Version** — Flag parsen oder `incoming/*.tar.gz` scannen
 4. **Integrity** — SHA256-Checksum pruefen (falls `.sha256` vorhanden)
 5. **Extract** — tar.gz nach `releases/<version>/` entpacken
-6. **Deps** — `npm ci --production --ignore-scripts` (skip bei `bundled-deps`)
+6. **Deps** — `install_cmd` ausfuehren (skip bei `bundled-deps`)
 7. **Shared** — Dateien aus `shared/` in Release-Dir symlinken
 8. **Symlink** — atomarer Switch: `current` → neue Release
 9a. **nginx** (static) — `nginx.conf` aus Release aktivieren, nginx reload
@@ -187,7 +187,7 @@ tail -f /app/.vigil-update.log | jq '.event'
 |---|---|
 | `archive/tar`, `compress/gzip` | tar.gz entpacken |
 | `crypto/sha256` | Integritaetspruefung |
-| `os/exec` | npm ci, smoke.sh, systemctl (indirekt via RestartFunc) |
+| `os/exec` | install_cmd, smoke.sh, systemctl (indirekt via RestartFunc) |
 | `github.com/FW-Systeme/Virgil/internal/process` | Store, Process-Typ |
 | `github.com/FW-Systeme/Virgil/internal/nginx` | nginx Config-Aktivierung (static type) |
 | `github.com/stretchr/testify` | Tests |

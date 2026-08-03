@@ -3,7 +3,7 @@ set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-VIGIL_BIN="${VIGIL_BIN:-$PROJECT_ROOT/vigil}"
+VIGIL_BIN="${VIGIL_BIN:-/usr/local/bin/vigil}"
 VIRGIL_HOME="/tmp/vigil-e2e-$$"
 EXAMPLE_DIR="$SCRIPT_DIR/fixtures/example-project"
 NODE_BIN="${VIRGIL_E2E_NODE_BIN:-$(command -v node)}"
@@ -13,19 +13,24 @@ if [ ! -x "$VIGIL_BIN" ]; then
     (cd "$PROJECT_ROOT" && go build -o "$VIGIL_BIN" ./cmd/vigil/) || exit 1
 fi
 
-for cmd in sudo curl systemctl; do
+for cmd in curl systemctl; do
     command -v $cmd >/dev/null 2>&1 || { echo "Missing: $cmd"; exit 1; }
 done
 
 NGINX_AVAILABLE=false
-if command -v nginx >/dev/null 2>&1 && systemctl is-active --quiet nginx 2>/dev/null; then
-    NGINX_AVAILABLE=true
-fi
+systemctl is-active --quiet nginx 2>/dev/null && NGINX_AVAILABLE=true
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'
 PASS=0; FAIL=0; SKIP=0
 
-vigil() { sudo VIRGIL_HOME="$VIRGIL_HOME" "$VIGIL_BIN" "$@"; }
+if [ "$(id -u)" -ne 0 ]; then
+    command -v sudo >/dev/null 2>&1 || { echo "Missing: sudo (not root)"; exit 1; }
+    SUDO="sudo"
+    vigil() { sudo VIRGIL_HOME="$VIRGIL_HOME" "$VIGIL_BIN" "$@"; }
+else
+    SUDO=""
+    vigil() { VIRGIL_HOME="$VIRGIL_HOME" "$VIGIL_BIN" "$@"; }
+fi
 
 CLEANUP_APPS=()
 cleanup() {
@@ -33,10 +38,10 @@ cleanup() {
     echo ">>> Cleanup"
     for app in "${CLEANUP_APPS[@]}"; do
         vigil remove "$app" >/dev/null 2>&1
-        sudo rm -f "/etc/systemd/system/$app.service" "/etc/nginx/sites-available/$app.conf" "/etc/nginx/sites-enabled/$app.conf"
+        $SUDO rm -f "/etc/systemd/system/$app.service" "/etc/nginx/sites-available/$app.conf" "/etc/nginx/sites-enabled/$app.conf"
     done
-    sudo nginx -s reload 2>/dev/null || true
-    sudo systemctl daemon-reload 2>/dev/null || true
+    $SUDO nginx -s reload 2>/dev/null || true
+    $SUDO systemctl daemon-reload 2>/dev/null || true
     rm -rf "$VIRGIL_HOME"
 }
 trap cleanup EXIT

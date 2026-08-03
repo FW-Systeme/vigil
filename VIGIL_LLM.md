@@ -26,8 +26,9 @@ Register app. Flags:
 - `--working-dir <path>`
 - `--command <string>` custom ExecStart (overrides --entry)
 - `--build-cmd <string>` build cmd before start
-- `--smoke-test-script <path>` enable release management
-- `--bundled-deps` skip npm ci if node_modules in archive
+- `--smoke-test-script <path>` (required) enable release management
+- `--install-cmd <string>` dependency install command (required for backend if --bundled-deps is false)
+- `--bundled-deps` skip dependency installation if deps are in archive
 - `--build-dir <path>` (static type)
 - `--nginx-domain/--nginx-path/--nginx-config` (static type)
 - `--env-file <path>`
@@ -75,7 +76,7 @@ Generate ecosystem.json template.
 3. Resolve version (--version flag or scan incoming/ for `*.tar.gz`)
 4. SHA256 integrity check (if `.sha256` file present)
 5. Extract tar.gz into `releases/<version>/`
-6. npm ci --production --ignore-scripts (skip if --bundled-deps)
+6. Run install_cmd (skip if --bundled-deps)
 7. Symlink shared/ files into release dir
 8. Atomic symlink switch: current → new release
 9. Restart service (systemd)
@@ -90,8 +91,8 @@ Generate ecosystem.json template.
 | Filename | `<version>.tar.gz` (version extracted from filename) |
 | Format | gzip-compressed tar, flat structure (no wrapping dir) |
 | SHA256 | Optional: `<file>.tar.gz.sha256` with hex hash |
-| Contents | App code + package.json + package-lock.json (if npm deps needed) |
-| bundled-deps | If true, node_modules/ in archive, skip npm ci |
+| Contents | App code + dependency manifests (e.g. package.json + package-lock.json) |
+| bundled-deps | If true, deps in archive, skip install_cmd |
 
 **Critical**: Archive must be FLAT. Wrapping folder corrupts paths.
 ```

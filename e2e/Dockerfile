@@ -7,7 +7,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cron \
     curl procps ca-certificates \
     nodejs \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
+
+RUN echo 'root ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/vigil
 
 RUN curl -fsSL https://go.dev/dl/go1.22.2.linux-amd64.tar.gz -o /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz \

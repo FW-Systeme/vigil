@@ -35,7 +35,9 @@ sudo vigil add my-api \
   --type app \
   --entry /opt/myapp/server.js \
   --port 3000 \
-  --working-dir /opt/myapp
+  --working-dir /opt/myapp \
+  --smoke-test-script /opt/myapp/smoke.sh \
+  --install-cmd "npm ci --production --ignore-scripts"
 
 # Go-Binary (mit Build vor Start)
 sudo vigil add my-service \
@@ -43,14 +45,17 @@ sudo vigil add my-service \
   --command "/opt/myapp/bin --port 8080" \
   --build-cmd "go build -o /opt/myapp/bin ." \
   --port 8080 \
-  --working-dir /opt/myapp
+  --working-dir /opt/myapp \
+  --smoke-test-script /opt/myapp/smoke.sh
 
 # Python
 sudo vigil add my-bot \
   --type app \
   --command "python /opt/bot/main.py" \
   --port 9000 \
-  --working-dir /opt/bot
+  --working-dir /opt/bot \
+  --smoke-test-script /opt/bot/smoke.sh \
+  --install-cmd "pip install -r requirements.txt"
 ```
 
 ### Static-App registrieren
@@ -96,7 +101,7 @@ Registriert eine neue App.
 
 | Flag | Typ | Pflicht | Beschreibung |
 |------|-----|---------|-------------|
-| `--type` | `string` | ja* | `node` oder `static` |
+| `--type` | `string` | ja* | `app`, `node` oder `static` |
 | `--port` | `int` | ja* | Port der App |
 | `--entry` | `string` | bei `node` | Einstiegsskript (z.B. `server.js`) |
 | `--build-dir` | `string` | bei `static` | Build-Verzeichnis (z.B. `dist/`) |
@@ -110,7 +115,8 @@ Registriert eine neue App.
 | `--config` | `string` | nein | Pfad zur ecosystem.json |
 | `--force` | `bool` | nein | Überschreibt existierende App |
 | `--smoke-test-script` | `string` | **ja** | Pfad zum Smoke-Test-Skript (aktiviert Release-Management) |
-| `--bundled-deps` | `bool` | nein | Abhängigkeiten sind im Paket enthalten (default: `false`, dann `npm ci --production`) |
+| `--install-cmd` | `string` | bei Backend | Installationsbefehl (z.B. `"npm ci --production"`). Pflicht wenn `--bundled-deps` nicht gesetzt |
+| `--bundled-deps` | `bool` | nein | Abhängigkeiten sind im Paket enthalten (skippt `--install-cmd`) |
 
 \* `--type` und `--port` sind nur Pflicht, wenn ohne `--config` gearbeitet wird.
 
@@ -118,13 +124,15 @@ Registriert eine neue App.
 
 ```bash
 # Einfache Node-App
-vigil add my-api --type node --entry app.js --port 3000
+vigil add my-api --type node --entry app.js --port 3000 \
+  --smoke-test-script ./smoke.sh --install-cmd "npm ci --production"
 
 # Static-App mit nginx-Domain
 vigil add my-site --type static --build-dir dist --port 8080 --nginx-domain example.com --nginx-path /var/www/example
 
 # Mit Arbeitsverzeichnis und Env-File
-vigil add my-api --type node --entry server.js --port 4000 --working-dir /app --env-file /app/.env
+vigil add my-api --type node --entry server.js --port 4000 --working-dir /app --env-file /app/.env \
+  --smoke-test-script /app/smoke.sh --install-cmd "npm ci --production"
 
 # Aus ecosystem.json (alle Apps)
 vigil add --config ecosystem.json
@@ -133,7 +141,8 @@ vigil add --config ecosystem.json
 vigil add my-api --config ecosystem.json
 
 # Vorhandene App überschreiben
-vigil add my-api --type node --entry app.js --port 3000 --force
+vigil add my-api --type node --entry app.js --port 3000 \
+  --smoke-test-script ./smoke.sh --install-cmd "npm ci --production" --force
 
 # Go-Binary mit Build und Smoke-Test
 vigil add my-service --type app \
@@ -145,7 +154,8 @@ vigil add my-service --type app \
 # Mit Smoke-Test-Skript (aktiviert Release-Management)
 vigil add my-api --type node --entry server.js --port 3000 \
   --working-dir /opt/myapp \
-  --smoke-test-script /opt/myapp/smoke.sh
+  --smoke-test-script /opt/myapp/smoke.sh \
+  --install-cmd "npm ci --production --ignore-scripts"
 ```
 
 ---
@@ -235,6 +245,7 @@ vigil update my-api
 |------|-----|-------------|
 | `--version` | `string` | Zielversion (z.B. `v1.2.0`). Wird leer gelassen, scannt Vigil `incoming/` nach `.tar.gz`-Dateien |
 | `--quiet` | `bool` | Fortschrittsausgabe unterdrücken (nur Fehler und finales Ergebnis anzeigen) |
+| `--log-output` | `bool` | Schreibt JSON-Log nach `<working-dir>/.vigil-update.log` (append) |
 
 **Ablauf:**
 
@@ -244,7 +255,7 @@ vigil update my-api
  3. Version      ← aus --version oder Auto-Detekt in incoming/
  4. Integrität   ← SHA256-Prüfung (falls .sha256-Datei vorhanden)
  5. Extract      ← Archiv via tar entpacken (von Virgil selbst, kein App-Skript)
- 6. Deps         ← npm ci --production (falls nicht --bundled-deps)
+ 6. Deps         ← install_cmd ausführen (falls nicht --bundled-deps)
  7. Shared-Links ← Symlinks aus shared/ in release-Dir
  8. Symlink      ← current → releases/<version> (atomar)
  9. Restart      ← systemd restart / nginx reload
@@ -270,19 +281,8 @@ vigil init --output mein-projekt.json
 {
   "name": "my-app",
   "type": "app",
-  "port": 3000,
-  "entry": "./app.js",
-  "build_dir": "",
-  "command": "",
-  "build_cmd": "",
-  "env_file": "",
-  "working_dir": "",
-  "nginx_domain": "",
-  "nginx_path": "",
-  "smoke_test_script": "",
-  "bundled_deps": false,
-  "created_at": "2025-01-01T00:00:00Z",
-  "enabled": true
+  "command": "./my-app",
+  "port": 3000
 }
 ```
 
@@ -357,7 +357,7 @@ Die `ecosystem.json` erlaubt es, mehrere Apps auf einmal zu registrieren. Das Fo
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|-------------|
 | `name` | `string` | **ja** | Name der App (eindeutig) |
-| `type` | `string` | **ja** | `"node"` oder `"static"` |
+| `type` | `string` | **ja** | `"app"`, `"node"` oder `"static"` |
 | `port` | `int` | **ja** | Port (muss > 0 sein) |
 | `entry` | `string` | bei `node` | Einstiegsskript (z.B. `"app.js"`) |
 | `build_dir` | `string` | bei `static` | Build-Verzeichnis (z.B. `"dist"`) |
@@ -368,8 +368,9 @@ Die `ecosystem.json` erlaubt es, mehrere Apps auf einmal zu registrieren. Das Fo
 | `nginx_config` | `string` | nein | Pfad zu benutzerdefinierter nginx-Config (überschreibt Auto-Generierung) |
 | `command` | `string` | nein | Custom `ExecStart` (z.B. `"/opt/app/bin --port 8080"`) |
 | `build_cmd` | `string` | nein | Build-Befehl vor Start (z.B. `"go build -o /opt/app/bin ."`) |
-| `smoke_test_script` | `string` | ja, wenn Release-Management | Pfad zum Smoke-Test-Skript |
-| `bundled_deps` | `bool` | nein | Abhängigkeiten im Paket enthalten (default: `false`, dann `npm ci --production`) |
+| `smoke_test_script` | `string` | **ja** | Pfad zum Smoke-Test-Skript |
+| `install_cmd` | `string` | bei Backend | Installationsbefehl (z.B. `"npm ci --production"`). Pflicht wenn `bundled_deps` false |
+| `bundled_deps` | `bool` | nein | Abhängigkeiten im Paket enthalten (skippt `install_cmd`) |
 | `enabled` | `bool` | nein | Ob die App aktiv ist (default: `false`) |
 
 ### Nutzung
@@ -496,7 +497,7 @@ Das Skript ist ein einzelnes ausführbares Skript, das als einziges Argument das
 
 **Exit-Codes:** `0` = Erfolg, `≠0` = Fehler → Rollback.
 
-- Entpacken und Abhängigkeiten (`npm ci --production`) übernimmt Vigil selbst.
+- Entpacken und Abhängigkeiten (`install_cmd`) übernimmt Vigil selbst.
 - Der Smoke-Test läuft **nach** dem Symlink-Switch und dem Restart.
 - Ein Fehler löst automatisch Rollback auf die vorherige Version aus.
 
@@ -533,11 +534,11 @@ Das Paket muss enthalten, was die Applikation zum Laufen braucht – Vigil valid
 
 | Szenario | Erforderlich im Archiv |
 |----------|----------------------|
-| `--bundled-deps=false` (Standard) | `package.json` + `package-lock.json` (für `npm ci --production`) |
-| `--bundled-deps=true` | `node_modules/` + `package.json`, `npm ci` wird übersprungen |
+| `--bundled-deps=false` (Standard) | Abhängigkeiten im Archiv (`install_cmd` wird ausgeführt) |
+| `--bundled-deps=true` | Abhängigkeiten bereits im Archiv, `install_cmd` wird übersprungen |
 | Jede App | Einstiegsskript (z.B. `server.js`), Configs, statische Dateien etc. |
 
-> **Fehlt `package.json` bei `--bundled-deps=false`, schlägt `npm ci` fehl und Vigil bricht mit `dependency installation failed` ab.**
+> **Fehlen Abhängigkeiten bei `--bundled-deps=false`, schlägt `install_cmd` fehl und Vigil bricht mit `dependency installation failed` ab.**
 
 #### Archiv-Struktur — kein Wrapping-Ordner!
 
@@ -579,20 +580,20 @@ mv v1.2.0.tar.gz v1.2.0.tar.gz.sha256 <working-dir>/incoming/
 | `integrity check failed` | SHA256-Hash stimmt nicht | `sha256sum` neu berechnen, `.sha256`-Datei aktualisieren |
 | `reading gzip: ...` | Archiv ist kein gültiges gzip-Format | `file v1.0.0.tar.gz` prüfen, Archiv korrekt erstellen |
 | Wrapping-Ordner (unauffällig) | App startet nicht, Pfade stimmen nicht | `tar -tzf v1.0.0.tar.gz` prüfen: keine führende Ordnerebene |
-| `npm ci` schlägt fehl | `package-lock.json` fehlt im Archiv | Mit `npm install` im Build-Verzeichnis `package-lock.json` generieren**
+| `install_cmd` schlägt fehl | Abhängigkeiten im Archiv fehlen oder fehlerhaft | `install_cmd` korrekt konfigurieren, Abhängigkeiten im Build einbinden |
 
-**`--bundled-deps`:** Enthält das Archiv bereits `node_modules/`, kann Vigil mit `--bundled-deps=true` den Schritt `npm ci` überspringen. Sonst installiert Vigil automatisch `npm ci --production`.
+**`--bundled-deps`:** Enthält das Archiv bereits die Abhängigkeiten (z.B. `node_modules/`), kann Vigil mit `--bundled-deps=true` den Schritt `install_cmd` überspringen. Sonst führt Vigil den konfigurierten `install_cmd` aus.
 
 #### Konsolenausgabe während des Updates
 
-Vigil gibt den Fortschritt des 12-Schritte-Prozesses auf der Konsole aus:
+Vigil gibt den Fortschritt des 13-Schritte-Prozesses auf der Konsole aus:
 
 ```
   Lock acquired
   Using version v1.2.0
   Integrity check passed
   Extracting v1.2.0.tar.gz...
-  Installing dependencies (npm ci)...
+  Installing dependencies (install_cmd)...
   Linking shared data...
   Switching symlink to v1.2.0...
   Restarting service...
@@ -643,7 +644,8 @@ Jede App wird als einzelne JSON-Datei gespeichert. Schreibvorgänge sind atomar 
   "created_at": "2025-01-15T10:30:00Z",
   "enabled": true,
   "smoke_test_script": "/opt/myapp/smoke.sh",
-  "bundled_deps": false
+  "bundled_deps": false,
+  "install_cmd": "npm ci --production --ignore-scripts"
 }
 ```
 
