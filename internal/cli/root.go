@@ -1,8 +1,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/FW-Systeme/Virgil/internal/nginx"
 	"github.com/FW-Systeme/Virgil/internal/process"
@@ -31,8 +36,6 @@ func needsSystemd(cmd *cobra.Command) bool {
 		return false
 	case strings.HasPrefix(path, "vigil cron"):
 		return false
-	case path == "vigil logsave status":
-		return false
 	default:
 		return true
 	}
@@ -49,6 +52,25 @@ func NewRootCmd() *cobra.Command {
 		Short: "A lightweight process manager (PM2 alternative)",
 		Long:  `Vigil is a lightweight CLI process manager that wraps systemd and nginx.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// Set up log output before any other output.
+			if logOutputPath, _ := cmd.Flags().GetString("log-output"); logOutputPath != "" {
+				f, err := openLogFile(logOutputPath, cmd.CommandPath())
+				if err != nil {
+					return fmt.Errorf("opening log file: %w", err)
+				}
+				cmd.SetContext(contextWithLogFile(cmd.Context(), f))
+
+				outW := cmd.OutOrStdout()
+				cmd.SetOut(io.MultiWriter(outW, f))
+				errW := cmd.ErrOrStderr()
+				cmd.SetErr(io.MultiWriter(errW, f))
+
+				if root := cmd.Root(); root != cmd {
+					root.SetOut(io.MultiWriter(root.OutOrStdout(), f))
+					root.SetErr(io.MultiWriter(root.ErrOrStderr(), f))
+				}
+			}
+
 			store, err := process.NewStore()
 			if err != nil {
 				return fmt.Errorf("initializing store: %w", err)
@@ -77,10 +99,18 @@ func NewRootCmd() *cobra.Command {
 			cmd.SetContext(pmCtx(cmd.Context(), pm))
 			return nil
 		},
+		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+			if f := logFileFromCtx(cmd.Context()); f != nil {
+				f.Close()
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
+
+	cmd.PersistentFlags().String("log-output", "", "Log command stdout/stderr to a directory or file")
 
 	cmd.AddCommand(newAddCmd())
 	cmd.AddCommand(newRemoveCmd())
@@ -90,7 +120,6 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newRestartCmd())
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newLogsCmd())
-	cmd.AddCommand(newLogSaveCmd())
 	cmd.AddCommand(newUpdateCmd())
 	cmd.AddCommand(newCronCmd())
 
@@ -107,4 +136,47 @@ func NewRootCmd() *cobra.Command {
 
 func Execute() error {
 	return NewRootCmd().Execute()
+}
+
+func openLogFile(path, cmdPath string) (*os.File, error) {
+	fi, err := os.Stat(path)
+	if err == nil && fi.IsDir() {
+		return openLogInDir(path, cmdPath)
+	}
+	if err == nil {
+		return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	}
+	if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if strings.HasSuffix(path, string(os.PathSeparator)) {
+		if err := os.MkdirAll(path, 0755); err != nil {
+			return nil, err
+		}
+		return openLogInDir(path, cmdPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, err
+	}
+	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+}
+
+func openLogInDir(dir, cmdPath string) (*os.File, error) {
+	name := filepath.Join(dir,
+		fmt.Sprintf("%s-%s-%d.log",
+			strings.ReplaceAll(cmdPath, " ", "-"),
+			time.Now().Format("20060102-150405"),
+			os.Getpid(),
+		),
+	)
+	return os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+}
+
+func contextWithLogFile(ctx context.Context, f *os.File) context.Context {
+	return context.WithValue(ctx, logFileKey, f)
+}
+
+func logFileFromCtx(ctx context.Context) *os.File {
+	f, _ := ctx.Value(logFileKey).(*os.File)
+	return f
 }

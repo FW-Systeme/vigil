@@ -11,7 +11,6 @@ import (
 func newUpdateCmd() *cobra.Command {
 	var version string
 	var quiet bool
-	var logOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "update <name>",
@@ -42,7 +41,7 @@ The update process:
 				stdout = nil
 			}
 
-			svc := update.NewService(pm.Store(), pm.RestartProcess, pm.Nginx(), stdout, logOutput)
+			svc := update.NewService(pm.Store(), pm.RestartProcess, pm.Nginx(), stdout)
 
 			if err := svc.Update(cmd.Context(), args[0], version); err != nil {
 				return err
@@ -61,7 +60,6 @@ The update process:
 
 	cmd.Flags().StringVar(&version, "version", "", "Target version (auto-detect from incoming/ if empty)")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "Suppress progress output")
-	cmd.Flags().BoolVar(&logOutput, "log-output", false, "Write update log to <working-dir>/.vigil-update.log")
 
 	return cmd
 }

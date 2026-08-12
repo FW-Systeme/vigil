@@ -10,8 +10,9 @@ import (
 type ctxKey string
 
 const (
-	pmKey   ctxKey = "pm"
-	cronKey ctxKey = "cron"
+	pmKey      ctxKey = "pm"
+	cronKey    ctxKey = "cron"
+	logFileKey ctxKey = "logfile"
 )
 
 func pmCtx(ctx context.Context, pm *process.Manager) context.Context {

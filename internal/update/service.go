@@ -19,15 +19,14 @@ import (
 )
 
 type service struct {
-	store     process.Store
-	restart   RestartFunc
-	nginx     nginx.Client
-	stdout    io.Writer
-	logOutput bool
+	store   process.Store
+	restart RestartFunc
+	nginx   nginx.Client
+	stdout  io.Writer
 }
 
-func NewService(store process.Store, restart RestartFunc, nginx nginx.Client, stdout io.Writer, logOutput bool) Service {
-	return &service{store: store, restart: restart, nginx: nginx, stdout: stdout, logOutput: logOutput}
+func NewService(store process.Store, restart RestartFunc, nginx nginx.Client, stdout io.Writer) Service {
+	return &service{store: store, restart: restart, nginx: nginx, stdout: stdout}
 }
 
 func (s *service) Update(ctx context.Context, name string, version string) error {
@@ -58,18 +57,7 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	}
 	defer unlock()
 
-	var fw io.Writer
-	if s.logOutput {
-		logPath := filepath.Join(workingDir, ".vigil-update.log")
-		f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			return fmt.Errorf("opening log file: %w", err)
-		}
-		defer f.Close()
-		fw = f
-	}
-
-	log := NewLogger(s.stdout, fw)
+	log := NewLogger(s.stdout, name)
 
 	log.Log("lock.acquired", nil)
 	defer func() {

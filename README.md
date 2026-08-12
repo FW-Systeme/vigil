@@ -245,7 +245,6 @@ vigil update my-api
 |------|-----|-------------|
 | `--version` | `string` | Zielversion (z.B. `v1.2.0`). Wird leer gelassen, scannt Vigil `incoming/` nach `.tar.gz`-Dateien |
 | `--quiet` | `bool` | Fortschrittsausgabe unterdrücken (nur Fehler und finales Ergebnis anzeigen) |
-| `--log-output` | `bool` | Schreibt JSON-Log nach `<working-dir>/.vigil-update.log` (append) |
 
 **Ablauf:**
 
@@ -264,6 +263,29 @@ vigil update my-api
 12. Cleanup      ← Alte Releases löschen (keep=3, fix)
 13. Unlock       ← .vigil.lock entfernen
 ```
+
+---
+
+### `--log-output` (Globaler Flag)
+
+Jeder Befehl kann mit `--log-output <pfad>` gestartet werden, um stdout und stderr in eine Logdatei zu schreiben.
+
+```bash
+# In Verzeichnis mit automatischem Dateinamen
+vigil start my-api --log-output /var/log/vigil/
+
+# Exakter Dateipfad
+vigil update my-api --log-output /var/log/vigil/update-my-api.log
+```
+
+**Automatischer Dateiname:** `vigil-<befehl>-<YYYYMMDD-HHMMSS>-<PID>.log`
+
+| Verhalten | Beschreibung |
+|-----------|-------------|
+| Pfad existiert und ist Verzeichnis | Logdatei wird automatisch im Verzeichnis erzeugt |
+| Pfad endet mit `/` | Verzeichnis wird angelegt, automatischer Dateiname |
+| Exakter Dateipfad (z.B. `.log`) | Logdatei an exakt diesem Pfad (Elternverzeichnis wird angelegt) |
+| Wiederholter Aufruf mit gleichem Pfad | Ausgabe wird angehängt (append) |
 
 ---
 

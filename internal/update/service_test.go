@@ -59,7 +59,7 @@ func TestUpdate_NoWorkingDir(t *testing.T) {
 	svc := NewService(&mockStore{p: process.Process{
 		Name:            "app",
 		SmokeTestScript: "/nonexistent",
-	}}, nil, nil, nil, false)
+	}}, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "working_dir")
@@ -75,7 +75,7 @@ func TestUpdate_ErrLocked(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil, nil, nil, false)
+	svc := NewService(store, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrLocked)
 }
@@ -87,7 +87,7 @@ func TestUpdate_ErrNoPackage(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil, nil, nil, false)
+	svc := NewService(store, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "")
 	assert.ErrorIs(t, err, ErrNoPackage)
 }
@@ -100,7 +100,7 @@ func TestUpdate_CreatesMissingWorkingDir(t *testing.T) {
 		WorkingDir:      workingDir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil, nil, nil, false)
+	svc := NewService(store, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "")
 	require.ErrorIs(t, err, ErrNoPackage)
 
@@ -136,7 +136,7 @@ func TestUpdate_ErrIntegrity(t *testing.T) {
 		WorkingDir:      dir,
 		SmokeTestScript: "/nonexistent/smoke.sh",
 	}}
-	svc := NewService(store, nil, nil, nil, false)
+	svc := NewService(store, nil, nil, nil)
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	assert.ErrorIs(t, err, ErrIntegrity)
 }
@@ -168,7 +168,7 @@ exit 0
 	}}, func(ctx context.Context, name string) error {
 		restarted = true
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -210,12 +210,13 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, &buf, false)
+	}, nil, &buf)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
 
 	output := buf.String()
+	assert.Contains(t, output, "\"app\":\"app\"")
 	assert.Contains(t, output, `"event":"lock.acquired"`)
 	assert.Contains(t, output, `"event":"version.resolve"`)
 	assert.Contains(t, output, `"version":"v1.0.0"`)
@@ -252,7 +253,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, io.Discard, false)
+	}, nil, io.Discard)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -280,7 +281,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "")
 	require.NoError(t, err)
@@ -318,7 +319,7 @@ exit 1
 	}}, func(ctx context.Context, name string) error {
 		restartCount++
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.ErrorIs(t, err, ErrRolledBack)
@@ -350,7 +351,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -386,7 +387,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v2.0.0")
 	require.NoError(t, err)
@@ -422,7 +423,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -465,7 +466,7 @@ exit 0
 			return fmt.Errorf("restart failed")
 		}
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
@@ -736,7 +737,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
@@ -917,7 +918,7 @@ exit 0
 		Port:            8080,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, ng, nil, false)
+	}, ng, nil)
 
 	err = svc.Update(context.Background(), "my-site", "v1.0.0")
 	require.NoError(t, err)
@@ -972,7 +973,7 @@ exit 0
 		Port:            8080,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, ng, nil, false)
+	}, ng, nil)
 
 	err = svc.Update(context.Background(), "my-site", "v1.0.0")
 	require.NoError(t, err)
@@ -1032,7 +1033,7 @@ exit 1
 	}}, func(ctx context.Context, name string) error {
 		restartCount++
 		return nil
-	}, ng, nil, false)
+	}, ng, nil)
 
 	err = svc.Update(context.Background(), "my-site", "v1.0.0")
 	require.ErrorIs(t, err, ErrRolledBack)
@@ -1091,7 +1092,7 @@ exit 0
 		Port:            8080,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, ng, nil, false)
+	}, ng, nil)
 
 	err := svc.Update(context.Background(), "my-site", "v1.0.0")
 	require.NoError(t, err)
@@ -1131,7 +1132,7 @@ exit 0
 		Port:            8080,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, ng, nil, false)
+	}, ng, nil)
 
 	err := svc.Update(context.Background(), "my-site", "v1.0.0")
 	require.Error(t, err)
@@ -1171,7 +1172,7 @@ exit 0
 		Port:            8080,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, ng, nil, false)
+	}, ng, nil)
 
 	err := svc.Update(context.Background(), "my-site", "v1.0.0")
 	require.Error(t, err)
@@ -1207,7 +1208,7 @@ exit 0
 	}}, func(ctx context.Context, name string) error {
 		restarted = true
 		return nil
-	}, ng, nil, false)
+	}, ng, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -1283,7 +1284,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.NoError(t, err)
@@ -1310,7 +1311,7 @@ exit 0
 		BundledDeps:     true,
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)
@@ -1339,7 +1340,7 @@ exit 0
 		InstallCmd:      "false",
 	}}, func(ctx context.Context, name string) error {
 		return nil
-	}, nil, nil, false)
+	}, nil, nil)
 
 	err := svc.Update(context.Background(), "app", "v1.0.0")
 	require.Error(t, err)

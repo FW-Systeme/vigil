@@ -179,13 +179,9 @@ func TestNeedsSystemd(t *testing.T) {
 	remove := &cobra.Command{Use: "remove"}
 	logs := &cobra.Command{Use: "logs"}
 	update := &cobra.Command{Use: "update"}
-	logsave := &cobra.Command{Use: "logsave"}
-	logsaveEnable := &cobra.Command{Use: "enable"}
-	logsaveStatus := &cobra.Command{Use: "status"}
 
-	root.AddCommand(list, initCmd, versionCmd, cron, add, start, stop, restart, remove, logs, update, logsave)
+	root.AddCommand(list, initCmd, versionCmd, cron, add, start, stop, restart, remove, logs, update)
 	cron.AddCommand(cronAdd)
-	logsave.AddCommand(logsaveEnable, logsaveStatus)
 
 	tests := []struct {
 		cmd  *cobra.Command
@@ -204,8 +200,6 @@ func TestNeedsSystemd(t *testing.T) {
 		{remove, true},
 		{logs, true},
 		{update, true},
-		{logsaveEnable, true},
-		{logsaveStatus, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.cmd.CommandPath(), func(t *testing.T) {
@@ -244,7 +238,6 @@ func TestHelp(t *testing.T) {
 	assert.Contains(t, out, "restart")
 	assert.Contains(t, out, "version")
 	assert.Contains(t, out, "logs")
-	assert.Contains(t, out, "logsave")
 }
 
 func TestVersion(t *testing.T) {
@@ -657,87 +650,12 @@ func TestLogs_Success(t *testing.T) {
 	assert.Empty(t, out)
 }
 
-func TestLogSave_Help(t *testing.T) {
-	out, err := executeWithPM(t, testPM(), []string{"logsave", "--help"})
-	require.NoError(t, err)
-	assert.Contains(t, out, "enable")
-	assert.Contains(t, out, "disable")
-	assert.Contains(t, out, "status")
-}
-
-func TestLogSave_Enable_Help(t *testing.T) {
-	out, err := executeWithPM(t, testPM(), []string{"logsave", "enable", "--help"})
-	require.NoError(t, err)
-	assert.Contains(t, out, "--max-size")
-	assert.Contains(t, out, "--output")
-	assert.Contains(t, out, "--rotate")
-}
-
-func TestLogSave_Enable_MissingName(t *testing.T) {
-	_, err := executeWithPM(t, testPM(), []string{"logsave", "enable"})
-	require.Error(t, err)
-}
-
-func TestLogSave_Disable_MissingName(t *testing.T) {
-	_, err := executeWithPM(t, testPM(), []string{"logsave", "disable"})
-	require.Error(t, err)
-}
-
-func TestLogSave_Status_MissingName(t *testing.T) {
-	_, err := executeWithPM(t, testPM(), []string{"logsave", "status"})
-	require.Error(t, err)
-}
-
 func TestLogs_NoPM(t *testing.T) {
 	cmd := newLogsCmd()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
 	cmd.SetArgs([]string{"my-app"})
-	err := cmd.Execute()
-	require.Error(t, err)
-}
-
-func TestLogSaveEnable_NoPM(t *testing.T) {
-	cmd := newLogSaveEnableCmd()
-	buf := new(bytes.Buffer)
-	cmd.SetOut(buf)
-	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"my-app"})
-	err := cmd.Execute()
-	require.Error(t, err)
-}
-
-func TestLogSaveDisable_NoPM(t *testing.T) {
-	cmd := newLogSaveDisableCmd()
-	buf := new(bytes.Buffer)
-	cmd.SetOut(buf)
-	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"my-app"})
-	err := cmd.Execute()
-	require.Error(t, err)
-}
-
-func TestLogSaveStatus_NoPM(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	cmd := newLogSaveStatusCmd()
-	buf := new(bytes.Buffer)
-	cmd.SetOut(buf)
-	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"my-app"})
-	err := cmd.Execute()
-	require.Error(t, err)
-}
-
-func TestLogSaveStatus_NotFound(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	cmd := newLogSaveStatusCmd()
-	buf := new(bytes.Buffer)
-	cmd.SetOut(buf)
-	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"nonexistent"})
 	err := cmd.Execute()
 	require.Error(t, err)
 }
@@ -752,47 +670,6 @@ func TestLogs_OutputFlag(t *testing.T) {
 	out, err := executeWithPM(t, pm, []string{"logs", "my-app", "--output", outputPath})
 	require.NoError(t, err)
 	assert.Empty(t, out)
-}
-
-func TestLogSaveEnable_Success(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	pm := testPMWithProcesses(map[string]process.Process{
-		"my-app": {Name: "my-app", Type: process.TypeNode},
-	})
-	out, err := executeWithPM(t, pm, []string{"logsave", "enable", "my-app"})
-	require.NoError(t, err)
-	assert.Contains(t, out, "Enabled log saving")
-}
-
-func TestLogSaveDisable_Success(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	pm := testPMWithProcesses(map[string]process.Process{
-		"my-app": {Name: "my-app", Type: process.TypeNode},
-	})
-	out, err := executeWithPM(t, pm, []string{"logsave", "disable", "my-app"})
-	require.NoError(t, err)
-	assert.Contains(t, out, "Disabled log saving")
-}
-
-func TestLogSaveStatus_Disabled(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
-	// Save a disabled log config first
-	ls, err := process.NewLogStore()
-	require.NoError(t, err)
-	err = ls.Save(process.LogConfig{Name: "my-app", Enabled: false, LogPath: "/tmp", MaxSize: "10M", Rotate: 3})
-	require.NoError(t, err)
-
-	cmd := newLogSaveStatusCmd()
-	buf := new(bytes.Buffer)
-	cmd.SetOut(buf)
-	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"my-app"})
-	err = cmd.Execute()
-	require.NoError(t, err)
-	assert.Contains(t, buf.String(), "disabled")
 }
 
 // --- Cron command tests ---
@@ -1483,22 +1360,102 @@ func TestCronAdd_WithConfigFile_NameFilterNotFound(t *testing.T) {
 	assert.Contains(t, buf.String(), "0 cron job(s) added")
 }
 
-func TestLogSaveStatus_Enabled(t *testing.T) {
+// --- Log output tests ---
+
+func TestOpenLogFile_Directory(t *testing.T) {
+	dir := t.TempDir()
+	f, err := openLogFile(dir, "vigil start")
+	require.NoError(t, err)
+	defer f.Close()
+
+	name := f.Name()
+	assert.DirExists(t, filepath.Dir(name))
+	assert.Contains(t, name, "vigil-start-")
+	assert.True(t, strings.HasSuffix(name, ".log"))
+}
+
+func TestOpenLogFile_File(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "my-debug.log")
+
+	f, err := openLogFile(logPath, "vigil update")
+	require.NoError(t, err)
+	defer f.Close()
+
+	assert.Equal(t, logPath, f.Name())
+	assert.FileExists(t, logPath)
+}
+
+func TestOpenLogFile_CreatesParent(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "sub", "nested", "my-debug.log")
+
+	f, err := openLogFile(logPath, "vigil start")
+	require.NoError(t, err)
+	defer f.Close()
+
+	assert.Equal(t, logPath, f.Name())
+	assert.FileExists(t, logPath)
+}
+
+func TestOpenLogFile_TrailingSeparator(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "logs") + string(os.PathSeparator)
+
+	f, err := openLogFile(subDir, "vigil cron add")
+	require.NoError(t, err)
+	defer f.Close()
+
+	name := f.Name()
+	assert.Contains(t, name, "vigil-cron-add-")
+	assert.True(t, strings.HasSuffix(name, ".log"))
+	assert.DirExists(t, filepath.Dir(name))
+}
+
+func TestLogOutput_Integration(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
-	ls, err := process.NewLogStore()
-	require.NoError(t, err)
-	err = ls.Save(process.LogConfig{Name: "my-app", Enabled: true, LogPath: "/var/log/vigil/my-app.log", MaxSize: "10M", Rotate: 3})
-	require.NoError(t, err)
+	SetVersion("1.2.3-test")
 
-	cmd := newLogSaveStatusCmd()
+	logPath := filepath.Join(dir, "version.log")
+	cmd := NewRootCmd()
 	buf := new(bytes.Buffer)
 	cmd.SetOut(buf)
 	cmd.SetErr(buf)
-	cmd.SetArgs([]string{"my-app"})
-	err = cmd.Execute()
+	cmd.SetArgs([]string{"version", "--log-output", logPath})
+	err := cmd.Execute()
 	require.NoError(t, err)
-	output := buf.String()
-	assert.Contains(t, output, "Enabled:   true")
-	assert.Contains(t, output, "Log Path:  /var/log/vigil/my-app.log")
+
+	assert.Equal(t, "1.2.3-test\n", buf.String())
+
+	data, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "1.2.3-test")
+}
+
+func TestLogOutput_Appends(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	SetVersion("v1")
+	logPath := filepath.Join(dir, "append.log")
+
+	cmd1 := NewRootCmd()
+	buf1 := new(bytes.Buffer)
+	cmd1.SetOut(buf1)
+	cmd1.SetErr(buf1)
+	cmd1.SetArgs([]string{"version", "--log-output", logPath})
+	err := cmd1.Execute()
+	require.NoError(t, err)
+
+	cmd2 := NewRootCmd()
+	buf2 := new(bytes.Buffer)
+	cmd2.SetOut(buf2)
+	cmd2.SetErr(buf2)
+	cmd2.SetArgs([]string{"version", "--log-output", logPath})
+	err = cmd2.Execute()
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	assert.Equal(t, 2, strings.Count(string(data), "v1"))
 }

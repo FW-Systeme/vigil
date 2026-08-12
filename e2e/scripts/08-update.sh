@@ -93,3 +93,21 @@ if ( set -e
 else
     fail "update auto-detect version"
 fi
+
+echo "=== update: JSON output contains app name ==="
+if ( set -e
+    rm -f "$incoming"/*.tar.gz "$incoming"/*.sha256
+    mkdir -p /tmp/vigil-e2e-rel-1.2.0
+    cp "$EXAMPLE_DIR/app/server.js" /tmp/vigil-e2e-rel-1.2.0/server.js
+    echo "1.2.0" > /tmp/vigil-e2e-rel-1.2.0/VERSION
+    tar -czf "$incoming/v1.2.0.tar.gz" -C /tmp/vigil-e2e-rel-1.2.0 .
+    sha256sum "$incoming/v1.2.0.tar.gz" | awk '{print $1}' > "$incoming/v1.2.0.tar.gz.sha256"
+
+    out=$(vigil_capture update "$name" --version v1.2.0)
+    echo "$out" | grep -q "\"app\":\"$name\""
+    echo "$out" | grep -q "\"event\":\"update.complete\""
+); then
+    pass "update JSON contains app name"
+else
+    fail "update JSON contains app name"
+fi

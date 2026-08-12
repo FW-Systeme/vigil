@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLogger_SingleWriter(t *testing.T) {
+func TestLogger_Writes(t *testing.T) {
 	var buf bytes.Buffer
-	log := NewLogger(&buf, nil)
+	log := NewLogger(&buf, "test-app")
 
 	log.Log("test.event", map[string]any{"key": "value"})
 
@@ -21,30 +21,20 @@ func TestLogger_SingleWriter(t *testing.T) {
 
 	var entry logEntry
 	require.NoError(t, json.Unmarshal([]byte(lines[0]), &entry))
+	assert.Equal(t, "test-app", entry.App)
 	assert.Equal(t, "test.event", entry.Event)
 	assert.NotEmpty(t, entry.Timestamp)
 	assert.Equal(t, "value", entry.Fields["key"])
 }
 
-func TestLogger_DualWriter(t *testing.T) {
-	var buf1, buf2 bytes.Buffer
-	log := NewLogger(&buf1, &buf2)
-
-	log.Log("dual.event", nil)
-
-	assert.Positive(t, buf1.Len())
-	assert.Positive(t, buf2.Len())
-	assert.Equal(t, buf1.String(), buf2.String())
-}
-
-func TestLogger_NilWriters(t *testing.T) {
-	log := NewLogger(nil, nil)
+func TestLogger_NilWriter(t *testing.T) {
+	log := NewLogger(nil, "test-app")
 	log.Log("silent.event", nil)
 }
 
 func TestLogger_Concurrent(t *testing.T) {
 	var buf bytes.Buffer
-	log := NewLogger(&buf, nil)
+	log := NewLogger(&buf, "test-app")
 
 	done := make(chan struct{})
 	for i := 0; i < 10; i++ {
@@ -64,19 +54,20 @@ func TestLogger_Concurrent(t *testing.T) {
 
 func TestLogger_NoFields(t *testing.T) {
 	var buf bytes.Buffer
-	log := NewLogger(&buf, nil)
+	log := NewLogger(&buf, "test-app")
 
 	log.Log("simple.event", nil)
 
 	var entry logEntry
 	require.NoError(t, json.Unmarshal(buf.Bytes()[:buf.Len()-1], &entry))
+	assert.Equal(t, "test-app", entry.App)
 	assert.Equal(t, "simple.event", entry.Event)
 	assert.Nil(t, entry.Fields)
 }
 
 func TestLogger_JSONValidLines(t *testing.T) {
 	var buf bytes.Buffer
-	log := NewLogger(&buf, nil)
+	log := NewLogger(&buf, "test-app")
 
 	log.Log("first", map[string]any{"a": 1})
 	log.Log("second", map[string]any{"b": "two"})
@@ -88,6 +79,7 @@ func TestLogger_JSONValidLines(t *testing.T) {
 	for i, line := range lines {
 		var entry logEntry
 		require.NoError(t, json.Unmarshal([]byte(line), &entry), "line %d is not valid JSON", i)
+		assert.Equal(t, "test-app", entry.App)
 		assert.NotEmpty(t, entry.Timestamp)
 		assert.NotEmpty(t, entry.Event)
 	}
