@@ -33,6 +33,7 @@ type Process struct {
 	SmokeTestScript string    `json:"smoke_test_script,omitempty"`
 	BundledDeps     bool      `json:"bundled_deps,omitempty"`
 	InstallCmd      string    `json:"install_cmd,omitempty"`
+	KillMode        string    `json:"kill_mode,omitempty"`
 }
 
 func (p Process) Validate() error {
@@ -56,6 +57,16 @@ func (p Process) Validate() error {
 	}
 	if !p.BundledDeps && p.InstallCmd == "" && p.IsBackend() {
 		return fmt.Errorf("install_cmd is required when bundled_deps is false")
+	}
+	validKillModes := map[string]bool{
+		"":              true,
+		"process":       true,
+		"control-group": true,
+		"mixed":         true,
+		"none":          true,
+	}
+	if !validKillModes[p.KillMode] {
+		return fmt.Errorf("kill_mode must be one of: process, control-group, mixed, none (or empty for default)")
 	}
 	return nil
 }

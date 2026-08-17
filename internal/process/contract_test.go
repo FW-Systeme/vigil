@@ -94,6 +94,36 @@ func TestValidate_StaticSkipsInstallCmd(t *testing.T) {
 	assert.NoError(t, p.Validate())
 }
 
+func TestValidate_KillModeEmpty(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install", KillMode: ""}
+	assert.NoError(t, p.Validate())
+}
+
+func TestValidate_KillModeProcess(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install", KillMode: "process"}
+	assert.NoError(t, p.Validate())
+}
+
+func TestValidate_KillModeControlGroup(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install", KillMode: "control-group"}
+	assert.NoError(t, p.Validate())
+}
+
+func TestValidate_KillModeMixed(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install", KillMode: "mixed"}
+	assert.NoError(t, p.Validate())
+}
+
+func TestValidate_KillModeNone(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install", KillMode: "none"}
+	assert.NoError(t, p.Validate())
+}
+
+func TestValidate_KillModeInvalid(t *testing.T) {
+	p := Process{Name: "app", Type: TypeNode, Port: 3000, Entry: "app.js", SmokeTestScript: "/smoke.sh", InstallCmd: "yarn install", KillMode: "invalid"}
+	assert.ErrorContains(t, p.Validate(), "kill_mode must be one of")
+}
+
 func TestParseEcosystemFile_SingleApp(t *testing.T) {
 	input := `{"name":"my-app","type":"node","entry":"./app.js","port":3000}`
 	apps, err := ParseEcosystemFile(strings.NewReader(input))

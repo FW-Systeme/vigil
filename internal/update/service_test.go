@@ -68,7 +68,7 @@ func TestUpdate_NoWorkingDir(t *testing.T) {
 func TestUpdate_ErrLocked(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, ".vigil.lock")
-	require.NoError(t, os.WriteFile(lockPath, []byte("12345\n"), 0600))
+	require.NoError(t, os.WriteFile(lockPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0600))
 
 	store := &mockStore{p: process.Process{
 		Name:            "app",
@@ -665,6 +665,57 @@ func TestLock_WritePID(t *testing.T) {
 	unlock()
 	_, err = os.Stat(lockPath)
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestLock_StaleLockRemoved(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".vigil.lock")
+	require.NoError(t, os.WriteFile(lockPath, []byte("2147483647\n"), 0600))
+
+	unlock, err := lock(dir)
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+
+	data, err := os.ReadFile(lockPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "\n")
+
+	unlock()
+}
+
+func TestLock_InvalidPIDRemoved(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".vigil.lock")
+	require.NoError(t, os.WriteFile(lockPath, []byte("not-a-pid\n"), 0600))
+
+	unlock, err := lock(dir)
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+
+	unlock()
+	_, err = os.Stat(lockPath)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestLock_EmptyPIDRemoved(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".vigil.lock")
+	require.NoError(t, os.WriteFile(lockPath, []byte("0\n"), 0600))
+
+	unlock, err := lock(dir)
+	require.NoError(t, err)
+	require.NotNil(t, unlock)
+
+	unlock()
+}
+
+func TestLock_ActiveLockBlocks(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".vigil.lock")
+	require.NoError(t, os.WriteFile(lockPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0600))
+
+	_, err := lock(dir)
+	assert.ErrorIs(t, err, ErrLocked)
 }
 
 func TestLinkShared(t *testing.T) {

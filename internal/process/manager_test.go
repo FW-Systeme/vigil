@@ -479,6 +479,24 @@ func TestUnitContent_CommandOverridesEntry(t *testing.T) {
 	assert.NotContains(t, content, "/usr/bin/node")
 }
 
+func TestUnitContent_WithoutKillMode(t *testing.T) {
+	p := Process{Name: "my-app", Type: TypeNode, WorkingDir: "/app", Entry: "server.js"}
+	content := string(unitContent(p))
+	assert.NotContains(t, content, "KillMode")
+}
+
+func TestUnitContent_WithKillModeProcess(t *testing.T) {
+	p := Process{Name: "my-app", Type: TypeNode, WorkingDir: "/app", Entry: "server.js", KillMode: "process"}
+	content := string(unitContent(p))
+	assert.Contains(t, content, "KillMode=process")
+}
+
+func TestUnitContent_WithKillModeControlGroup(t *testing.T) {
+	p := Process{Name: "my-app", Type: TypeNode, WorkingDir: "/app", Entry: "server.js", KillMode: "control-group"}
+	content := string(unitContent(p))
+	assert.Contains(t, content, "KillMode=control-group")
+}
+
 func TestManager_StartProcess_UnknownType(t *testing.T) {
 	store := &mockStore{processes: map[string]Process{"x": {Name: "x", Type: "unknown"}}}
 	m := New(store, nil, nil)

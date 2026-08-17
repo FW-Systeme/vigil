@@ -32,6 +32,7 @@ Register app. Flags:
 - `--build-dir <path>` (static type)
 - `--nginx-domain/--nginx-path/--nginx-config` (static type)
 - `--env-file <path>`
+- `--kill-mode <mode>` systemd KillMode: `process`, `control-group`, `mixed`, or `none` (default: empty = systemd default `control-group`). Use `process` for self-updating apps to prevent systemd from killing the update process during restart.
 - `--force` overwrite existing
 - `--config <path>` ecosystem.json bulk add
 
@@ -48,7 +49,17 @@ Control app. app type → systemctl. static type → nginx reload.
 Release update for apps with --smoke-test-script. Flags:
 - `--version <string>` explicit version. Auto-detect from incoming/ if empty.
 - `--quiet` suppress stdout output.
-- `--log-output` write JSON-line log to `<working-dir>/.vigil-update.log` (append). Writes to stdout too unless --quiet.
+- `--log-output <path>` write JSON-line log to file or directory (see below).
+
+#### --log-output Semantics
+
+| Path Type | Behavior | Example |
+|-----------|----------|---------|
+| Existing directory | Auto-name: `vigil-update-<YYYYMMDD-HHMMSS>-<PID>.log` | `--log-output .` → `./vigil-update-20260817-121443-3810307.log` |
+| Non-existing path (no trailing `/`) | Treat as file, create parent dirs | `--log-output /var/log/vigil/update.log` |
+| Path with trailing `/` | Treat as directory, create it, auto-name inside | `--log-output /var/log/vigil/` → `/var/log/vigil/vigil-update-20260817-121443-3810307.log` |
+
+**Watchdog integration:** Pass explicit file path (`--log-output /path/to/update-<jobId>-<app>.log`) and read that exact file to check update status.
 
 ### `vigil init`
 Generate ecosystem.json template.
@@ -66,12 +77,12 @@ Generate ecosystem.json template.
 ├── shared/             persistent data (.env, config) symlinked into each release
 ├── incoming/           upload .tar.gz packages here
 ├── current → releases/v1.0.0/  atomic symlink
-├── .vigil.lock         lock file (PID inside)
-└── .vigil-update.log   JSON-line update log (when --log-output is used)
+├── .vigil.lock         lock file (PID inside, stale-lock detection active)
+└── vigil-update-*.log  JSON-line update logs (when --log-output is used with directory path)
 ```
 
 ### Update Steps (13 steps)
-1. Lock `.vigil.lock` (fail if held)
+1. Lock `.vigil.lock` (fail if held by live process; stale locks from dead processes are auto-removed via PID check)
 2. Ensure dirs: releases/, shared/, incoming/
 3. Resolve version (--version flag or scan incoming/ for `*.tar.gz`)
 4. SHA256 integrity check (if `.sha256` file present)

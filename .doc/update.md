@@ -111,9 +111,34 @@ Rueckgabe-Sentinels:
 |------|-----|---------|-------------|
 | `--version` | string | `""` | Explizite Version (sonst auto-detect aus incoming/) |
 | `--quiet` | bool | `false` | Unterdrueckt stdout-Ausgabe |
-| `--log-output` | bool | `false` | Schreibt JSON-Log nach `<working-dir>/.vigil-update.log` (append) |
+| `--log-output` | string | `""` | Pfad zu Log-Datei oder Verzeichnis (siehe unten) |
 
 Bei `--log-output` wird der Logger als Dual-Writer konfiguriert: stdout (sofern nicht `--quiet`) + Logdatei.
+
+### Log-Output Semantik
+
+Das `--log-output` Flag akzeptiert drei Arten von Pfaden:
+
+| Pfad-Typ | Verhalten | Beispiel |
+|----------|-----------|----------|
+| Existierendes Verzeichnis | Auto-Name: `vigil-update-<YYYYMMDD-HHMMSS>-<PID>.log` | `--log-output .` → `./vigil-update-20260817-121443-3810307.log` |
+| Nicht-existierender Pfad (ohne trailing `/`) | Als Datei behandeln, Parent-Dirs werden angelegt | `--log-output /var/log/vigil/update.log` |
+| Pfad mit trailing `/` | Als Verzeichnis behandeln, wird angelegt, Auto-Name darin | `--log-output /var/log/vigil/` → `/var/log/vigil/vigil-update-20260817-121443-3810307.log` |
+
+**Beispiele:**
+
+```bash
+# Auto-Name im aktuellen Verzeichnis
+vigil update my-app --log-output .
+
+# Explizite Datei (Parent-Dirs werden angelegt)
+vigil update my-app --log-output /var/log/vigil/my-app-update.log
+
+# Verzeichnis mit Auto-Name
+vigil update my-app --log-output /var/log/vigil/
+```
+
+**Watchdog-Integration:** Der update-watchdog übergibt typischerweise einen expliziten Dateipfad (`--log-output /path/to/update-<jobId>-<app>.log`) und liest anschließend genau diese Datei, um den Update-Status zu prüfen.
 
 ## Update-Prozess (13 Steps)
 
@@ -149,8 +174,8 @@ Jede Zeile ist ein JSON-Objekt mit `ts` (RFC3339 UTC), `event` (String), `fields
 |---------|-------------|--------|-------|
 | — | — | JSON | — |
 | ja | — | — | — |
-| — | ja | JSON | `<working-dir>/.vigil-update.log` |
-| ja | ja | — | `<working-dir>/.vigil-update.log` |
+| — | `<pfad>` | JSON | `<pfad>` (Datei oder Auto-Name in Verzeichnis) |
+| ja | `<pfad>` | — | `<pfad>` (Datei oder Auto-Name in Verzeichnis) |
 
 ### Aufrufender Prozess
 
@@ -177,8 +202,8 @@ tail -f /app/.vigil-update.log | jq '.event'
 ├── shared/              persistente Daten (.env, configs), symlinked in Releases
 ├── incoming/            Uploads: <version>.tar.gz + optional .sha256
 ├── current → releases/v1.1.0/  atomischer Symlink
-├── .vigil.lock          Lock-Datei (PID)
-└── .vigil-update.log    Update-Log (nur bei --log-output)
+├── .vigil.lock          Lock-Datei (PID, stale-lock detection aktiv)
+└── vigil-update-*.log   Update-Logs (nur bei --log-output mit Verzeichnis-Pfad)
 ```
 
 ## Abhaengigkeiten

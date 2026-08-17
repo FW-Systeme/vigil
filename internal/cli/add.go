@@ -26,6 +26,7 @@ func newAddCmd() *cobra.Command {
 	var smokeTestScript string
 	var bundledDeps bool
 	var installCmd string
+	var killMode string
 
 	cmd := &cobra.Command{
 		Use:   "add [name]",
@@ -64,7 +65,7 @@ Examples:
 				return fmt.Errorf("required flag(s) \"port\" not set")
 			}
 
-			return addSingle(cmd, pm, nameArg, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd, port, force, smokeTestScript, bundledDeps, installCmd)
+			return addSingle(cmd, pm, nameArg, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd, port, force, smokeTestScript, bundledDeps, installCmd, killMode)
 		},
 	}
 
@@ -85,11 +86,12 @@ Examples:
 	flags.StringVar(&smokeTestScript, "smoke-test-script", "", "Path to smoke test script (activates release management)")
 	flags.BoolVar(&bundledDeps, "bundled-deps", false, "Dependencies are included in the package")
 	flags.StringVar(&installCmd, "install-cmd", "", "Dependency install command (e.g. 'yarn install --frozen-lockfile', 'pip install -r requirements.txt')")
+	flags.StringVar(&killMode, "kill-mode", "", "systemd KillMode: process, control-group, mixed, or none (default: control-group)")
 
 	return cmd
 }
 
-func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd string, port int, force bool, smokeTestScript string, bundledDeps bool, installCmd string) error {
+func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, buildDir, workingDir, envFile, nginxDomain, nginxPath, nginxConfig, command, buildCmd string, port int, force bool, smokeTestScript string, bundledDeps bool, installCmd string, killMode string) error {
 	p := process.Process{
 		Name:            name,
 		Type:            process.Type(appType),
@@ -108,6 +110,7 @@ func addSingle(cmd *cobra.Command, pm *process.Manager, name, appType, entry, bu
 		SmokeTestScript: smokeTestScript,
 		BundledDeps:     bundledDeps,
 		InstallCmd:      installCmd,
+		KillMode:        killMode,
 	}
 
 	if err := p.Validate(); err != nil {

@@ -395,6 +395,10 @@ Restart=on-failure
 RestartSec=5
 `, p.Name, workingDir, execStart)
 
+	if p.KillMode != "" {
+		content += fmt.Sprintf("KillMode=%s\n", p.KillMode)
+	}
+
 	if p.EnvFile != "" {
 		content += fmt.Sprintf("EnvironmentFile=%s\n", p.EnvFile)
 	}

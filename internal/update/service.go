@@ -12,7 +12,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/FW-Systeme/Virgil/internal/nginx"
 	"github.com/FW-Systeme/Virgil/internal/process"
@@ -227,6 +229,9 @@ func lock(workingDir string) (func(), error) {
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
 		if os.IsExist(err) {
+			if removeStaleLock(lockPath) {
+				return lock(workingDir)
+			}
 			return nil, ErrLocked
 		}
 		return nil, fmt.Errorf("creating lock: %w", err)
@@ -234,6 +239,37 @@ func lock(workingDir string) (func(), error) {
 	fmt.Fprintf(f, "%d\n", os.Getpid())
 	f.Close()
 	return func() { os.Remove(lockPath) }, nil
+}
+
+// removeStaleLock removes a lock file that was left behind by a process that
+// is no longer running. The lock file stores the PID of the process that
+// created it; if that PID is not alive the lock can be safely removed and
+// the update may proceed. Returns false when the lock belongs to a live
+// process (or cannot be safely determined), in which case the caller should
+// report ErrLocked.
+func removeStaleLock(lockPath string) bool {
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return os.Remove(lockPath) == nil
+	}
+	// Signal 0 performs an existence check without sending a signal.
+	// ESRCH means no such process -> the lock is stale.
+	if syscall.Kill(pid, 0) != syscall.ESRCH {
+		return false
+	}
+	// Re-read before removing so we do not delete a lock that a concurrent
+	// updater just created after the stale file was cleaned up.
+	if data2, err := os.ReadFile(lockPath); err == nil {
+		if pid2, err := strconv.Atoi(strings.TrimSpace(string(data2))); err == nil && pid2 == pid {
+			os.Remove(lockPath)
+			return true
+		}
+	}
+	return true
 }
 
 func findVersion(incomingDir string) (string, error) {
