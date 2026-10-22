@@ -180,7 +180,7 @@ exit 0
 
 	current, err := os.Readlink(filepath.Join(dir, "current"))
 	require.NoError(t, err)
-	assert.Equal(t, releaseDir, current)
+	assert.Equal(t, filepath.Join("releases", "v1.0.0"), current)
 
 	envSymlink, err := os.Readlink(filepath.Join(releaseDir, ".env"))
 	require.NoError(t, err)
@@ -325,8 +325,51 @@ exit 1
 	require.ErrorIs(t, err, ErrRolledBack)
 
 	current, _ := os.Readlink(currentSymlink)
-	assert.Equal(t, oldRelease, current, "symlink should point back to old release")
+	assert.Equal(t, filepath.Join("releases", "v0.9.0"), current, "symlink should point back to old release")
 	assert.Equal(t, 2, restartCount, "restart called: once for new, once for rollback")
+}
+
+func TestUpdate_RollbackOnSmokeTestFailure_FallbackToNewest(t *testing.T) {
+	dir := t.TempDir()
+	setupDir(t, dir)
+
+	// A known-good older release that still exists.
+	olderRelease := filepath.Join(dir, "releases", "v0.8.0")
+	require.NoError(t, os.MkdirAll(olderRelease, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(olderRelease, "server.js"), []byte("old"), 0600))
+
+	// current points at a release that was already deleted (dangling).
+	currentSymlink := filepath.Join(dir, "current")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "releases", "v0.9.0"), currentSymlink))
+
+	tarData := createTarGz(t, map[string]string{"server.js": "new"})
+	pkgPath := filepath.Join(dir, "incoming", "v1.0.0.tar.gz")
+	require.NoError(t, os.WriteFile(pkgPath, tarData, 0600))
+
+	script := filepath.Join(dir, "smoke.sh")
+	writeScript(t, script, `#!/bin/sh
+exit 1
+`)
+
+	svc := NewService(&mockStore{p: process.Process{
+		Name:            "app",
+		WorkingDir:      dir,
+		SmokeTestScript: script,
+		BundledDeps:     true,
+	}}, func(ctx context.Context, name string) error {
+		return nil
+	}, nil, nil)
+
+	err := svc.Update(context.Background(), "app", "v1.0.0")
+	require.ErrorIs(t, err, ErrRolledBack)
+
+	current, err := os.Readlink(currentSymlink)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("releases", "v0.8.0"), current, "rollback must fall back to newest existing release")
+
+	// The symlink target must actually resolve (no dangling).
+	_, err = os.Stat(currentSymlink)
+	require.NoError(t, err)
 }
 
 func TestUpdate_BundledDepsSkipsNpmCI(t *testing.T) {
@@ -473,7 +516,7 @@ exit 0
 	assert.Contains(t, err.Error(), "restart")
 
 	current, _ := os.Readlink(currentSymlink)
-	assert.Equal(t, oldRelease, current, "symlink rolled back after restart failure")
+	assert.Equal(t, filepath.Join("releases", "v0.9.0"), current, "symlink rolled back after restart failure")
 }
 
 func TestFindVersion(t *testing.T) {
@@ -651,6 +694,77 @@ func TestRollbackSymlink_OldTargetGone(t *testing.T) {
 	assert.Equal(t, oldTarget, got)
 }
 
+func TestResolveRollbackTarget_OldTargetExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "releases", "v1.0.0"), 0755))
+
+	got := resolveRollbackTarget("releases/v1.0.0", dir, filepath.Join(dir, "releases"), "v1.1.0")
+	assert.Equal(t, filepath.Join("releases", "v1.0.0"), got)
+}
+
+func TestResolveRollbackTarget_FallsBackToNewest(t *testing.T) {
+	dir := t.TempDir()
+	releasesDir := filepath.Join(dir, "releases")
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.0.0"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.2.0"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.1.0"), 0755))
+
+	// oldTarget no longer exists; newest existing (v1.2.0) should win.
+	got := resolveRollbackTarget("releases/gone", dir, releasesDir, "gone")
+	assert.Equal(t, filepath.Join("releases", "v1.2.0"), got)
+}
+
+func TestResolveRollbackTarget_ExcludesFailedVersion(t *testing.T) {
+	dir := t.TempDir()
+	releasesDir := filepath.Join(dir, "releases")
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.1.0"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.2.0"), 0755))
+
+	// v1.2.0 is the failed release and must be skipped; fall back to v1.1.0.
+	got := resolveRollbackTarget("", dir, releasesDir, "v1.2.0")
+	assert.Equal(t, filepath.Join("releases", "v1.1.0"), got)
+}
+
+func TestResolveRollbackTarget_NormalizesLegacyAbsolute(t *testing.T) {
+	dir := t.TempDir()
+	releasesDir := filepath.Join(dir, "releases")
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.0.0"), 0755))
+
+	// A legacy absolute target inside the working dir is normalized to relative.
+	got := resolveRollbackTarget(filepath.Join(releasesDir, "v1.0.0"), dir, releasesDir, "")
+	assert.Equal(t, filepath.Join("releases", "v1.0.0"), got)
+}
+
+func TestResolveRollbackTarget_NoRelease(t *testing.T) {
+	dir := t.TempDir()
+	releasesDir := filepath.Join(dir, "releases")
+	require.NoError(t, os.MkdirAll(releasesDir, 0755))
+
+	assert.Equal(t, "", resolveRollbackTarget("", dir, releasesDir, "v1.0.0"))
+}
+
+func TestRollbackCurrent_FallsBackToNewestNotDangling(t *testing.T) {
+	dir := t.TempDir()
+	releasesDir := filepath.Join(dir, "releases")
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.1.0"), 0755))
+	require.NoError(t, os.MkdirAll(filepath.Join(releasesDir, "v1.2.0"), 0755))
+
+	symPath := filepath.Join(dir, "current")
+	// current already points at a dangling target (old release deleted).
+	require.NoError(t, os.Symlink("releases/gone", symPath))
+
+	svc := &service{}
+	svc.rollbackCurrent(NewLogger(nil, "app"), symPath, "releases/gone", releasesDir, "v1.2.0")
+
+	got, err := os.Readlink(symPath)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join("releases", "v1.1.0"), got)
+
+	// The target must actually resolve.
+	_, err = os.Stat(symPath)
+	require.NoError(t, err)
+}
+
 func TestLock_WritePID(t *testing.T) {
 	dir := t.TempDir()
 	unlock, err := lock(dir)
@@ -805,7 +919,7 @@ func TestCleanupReleases(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Join(dir, v), 0755))
 	}
 
-	err := cleanupReleases(dir, "v1.4.0", 3)
+	err := cleanupReleases(dir, "v1.4.0", 3, filepath.Join(dir, "current"))
 	require.NoError(t, err)
 
 	assert.DirExists(t, filepath.Join(dir, "v1.4.0"))
@@ -820,7 +934,7 @@ func TestCleanupReleases_NoneToDelete(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.0"), 0755))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.1.0"), 0755))
 
-	err := cleanupReleases(dir, "v1.1.0", 5)
+	err := cleanupReleases(dir, "v1.1.0", 5, filepath.Join(dir, "current"))
 	require.NoError(t, err)
 	assert.DirExists(t, filepath.Join(dir, "v1.0.0"))
 	assert.DirExists(t, filepath.Join(dir, "v1.1.0"))
@@ -834,7 +948,7 @@ func TestCleanupReleases_NonDirEntry(t *testing.T) {
 	// Add a non-directory entry alongside release dirs
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.txt"), []byte("info"), 0600))
 
-	err := cleanupReleases(dir, "v2.0.1", 3)
+	err := cleanupReleases(dir, "v2.0.1", 3, filepath.Join(dir, "current"))
 	require.NoError(t, err)
 	assert.DirExists(t, filepath.Join(dir, "v2.0.0"))
 	assert.DirExists(t, filepath.Join(dir, "v2.0.1"))
@@ -842,7 +956,7 @@ func TestCleanupReleases_NonDirEntry(t *testing.T) {
 }
 
 func TestCleanupReleases_NonExistentDir(t *testing.T) {
-	err := cleanupReleases("/nonexistent/path", "v1.0.0", 3)
+	err := cleanupReleases("/nonexistent/path", "v1.0.0", 3, "/nonexistent/current")
 	require.NoError(t, err)
 }
 
@@ -851,11 +965,32 @@ func TestCleanupReleases_Boundary(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.0"), 0755))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.1"), 0755))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "v1.0.2"), 0755))
-	err := cleanupReleases(dir, "v1.0.2", 3)
+	err := cleanupReleases(dir, "v1.0.2", 3, filepath.Join(dir, "current"))
 	require.NoError(t, err)
 	assert.DirExists(t, filepath.Join(dir, "v1.0.0"))
 	assert.DirExists(t, filepath.Join(dir, "v1.0.1"))
 	assert.DirExists(t, filepath.Join(dir, "v1.0.2"))
+}
+
+func TestCleanupReleases_ProtectsCurrentSymlinkTarget(t *testing.T) {
+	dir := t.TempDir()
+	versions := []string{"v1.0.0", "v1.1.0", "v1.2.0", "v1.3.0", "v1.4.0"}
+	for _, v := range versions {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, v), 0755))
+	}
+
+	// current still points at v1.1.0 (an older release); cleanup must not delete it.
+	currentSymlink := filepath.Join(dir, "current")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "v1.1.0"), currentSymlink))
+
+	err := cleanupReleases(dir, "v1.4.0", 3, currentSymlink)
+	require.NoError(t, err)
+
+	assert.DirExists(t, filepath.Join(dir, "v1.4.0"))
+	assert.DirExists(t, filepath.Join(dir, "v1.3.0"))
+	assert.DirExists(t, filepath.Join(dir, "v1.2.0"))
+	assert.DirExists(t, filepath.Join(dir, "v1.1.0"), "current symlink target must be preserved")
+	assert.NoDirExists(t, filepath.Join(dir, "v1.0.0"))
 }
 
 func TestCompareVersions(t *testing.T) {
@@ -1096,7 +1231,7 @@ exit 1
 
 	// Verify symlink reverted to old release
 	current, _ := os.Readlink(currentSymlink)
-	assert.Equal(t, oldRelease, current)
+	assert.Equal(t, filepath.Join("releases", "v0.9.0"), current)
 
 	// Verify EnableSiteFromFile was called twice: apply + rollback
 	require.Len(t, ng.enableCalls, 2)

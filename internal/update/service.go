@@ -127,7 +127,7 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	}
 
 	log.Log("symlink.switch", map[string]any{"version": version})
-	if err := switchSymlink(currentSymlink, releaseDir); err != nil {
+	if err := switchSymlink(currentSymlink, filepath.Join("releases", version)); err != nil {
 		log.Log("symlink.switch_failed", map[string]any{"error": err.Error()})
 		os.RemoveAll(releaseDir)
 		return fmt.Errorf("switching symlink: %w", err)
@@ -146,14 +146,14 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 
 			if err := s.nginx.EnableSiteFromFile(name, nginxConfigPath); err != nil {
 				log.Log("nginx.enable_failed", map[string]any{"error": err.Error()})
-				rollbackSymlink(currentSymlink, oldTarget)
+				s.rollbackCurrent(log, currentSymlink, oldTarget, releasesDir, version)
 				os.RemoveAll(releaseDir)
 				return fmt.Errorf("applying nginx site config: %w", err)
 			}
 			if err := s.nginx.Reload(ctx); err != nil {
 				s.restoreNginxBackup(ctx, name, workingDir, nginxBackup, log)
 				log.Log("nginx.reload_failed", map[string]any{"error": err.Error()})
-				rollbackSymlink(currentSymlink, oldTarget)
+				s.rollbackCurrent(log, currentSymlink, oldTarget, releasesDir, version)
 				os.RemoveAll(releaseDir)
 				return fmt.Errorf("reloading nginx after site config update: %w", err)
 			}
@@ -166,7 +166,7 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		log.Log("service.restart_start", nil)
 		if err := s.restart(ctx, name); err != nil {
 			log.Log("service.restart_failed", map[string]any{"error": err.Error()})
-			rollbackSymlink(currentSymlink, oldTarget)
+			s.rollbackCurrent(log, currentSymlink, oldTarget, releasesDir, version)
 			if rerr := s.restart(ctx, name); rerr != nil {
 				log.Log("rollback.restart_failed", map[string]any{"error": rerr.Error()})
 			}
@@ -182,9 +182,9 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 		log.Log("rollback.start", nil)
 		if nginxUpdated {
 			s.restoreNginxBackup(ctx, name, workingDir, nginxBackup, log)
-			rollbackSymlink(currentSymlink, oldTarget)
+			s.rollbackCurrent(log, currentSymlink, oldTarget, releasesDir, version)
 		} else {
-			rollbackSymlink(currentSymlink, oldTarget)
+			s.rollbackCurrent(log, currentSymlink, oldTarget, releasesDir, version)
 			if err := s.restart(ctx, name); err != nil {
 				log.Log("rollback.restart_failed", map[string]any{"error": err.Error()})
 			}
@@ -194,7 +194,7 @@ func (s *service) Update(ctx context.Context, name string, version string) error
 	}
 	log.Log("smoke_test.passed", nil)
 
-	if err := cleanupReleases(releasesDir, version, 3); err != nil {
+	if err := cleanupReleases(releasesDir, version, 3, currentSymlink); err != nil {
 		log.Log("cleanup.failed", map[string]any{"error": err.Error()})
 		return fmt.Errorf("cleaning up releases: %w", err)
 	}
@@ -435,13 +435,81 @@ func rollbackSymlink(symlinkPath, oldTarget string) {
 	}
 }
 
-func cleanupReleases(releasesDir, currentVersion string, keep int) error {
+// rollbackCurrent restores the current symlink to a valid release. It prefers
+// oldTarget when that release still exists; otherwise it falls back to the
+// newest existing release so that current never points at a dangling target.
+// The symlink target is stored relative to the working directory.
+func (s *service) rollbackCurrent(log *Logger, currentSymlink, oldTarget, releasesDir, exclude string) {
+	workingDir := filepath.Dir(currentSymlink)
+	target := resolveRollbackTarget(oldTarget, workingDir, releasesDir, exclude)
+	if target == "" {
+		log.Log("rollback.no_target", nil)
+		return
+	}
+	if target != oldTarget {
+		log.Log("rollback.fallback", map[string]any{"from": oldTarget, "to": target})
+	}
+	rollbackSymlink(currentSymlink, target)
+}
+
+// resolveRollbackTarget returns the release path (relative to workingDir) that
+// current should point to during a rollback. oldTarget is used when it still
+// exists; otherwise the newest existing release (excluding the failed one) is
+// used as a fallback. Legacy absolute targets are normalized to relative.
+func resolveRollbackTarget(oldTarget, workingDir, releasesDir, exclude string) string {
+	if oldTarget != "" {
+		resolved := oldTarget
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(workingDir, resolved)
+		}
+		if _, err := os.Stat(resolved); err == nil {
+			if rel, err := filepath.Rel(workingDir, resolved); err == nil && rel != "" && rel != "." {
+				return rel
+			}
+			return oldTarget
+		}
+	}
+	return newestExistingRelease(releasesDir, exclude)
+}
+
+func newestExistingRelease(releasesDir, exclude string) string {
+	entries, err := os.ReadDir(releasesDir)
+	if err != nil {
+		return ""
+	}
+	var best string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if name == exclude {
+			continue
+		}
+		if best == "" || compareVersions(name, best) > 0 {
+			best = name
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	return filepath.Join("releases", best)
+}
+
+func cleanupReleases(releasesDir, currentVersion string, keep int, currentSymlink string) error {
 	entries, err := os.ReadDir(releasesDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
+	}
+
+	// Never delete the release the current symlink points at, even if it does
+	// not match currentVersion (e.g. a leftover from a manual or partial switch).
+	protected := map[string]bool{currentVersion: true}
+	if link, err := os.Readlink(currentSymlink); err == nil {
+		protected[filepath.Base(link)] = true
 	}
 
 	type release struct {
@@ -455,7 +523,7 @@ func cleanupReleases(releasesDir, currentVersion string, keep int) error {
 			continue
 		}
 		name := e.Name()
-		if name == currentVersion {
+		if protected[name] {
 			continue
 		}
 		info, err := e.Info()
